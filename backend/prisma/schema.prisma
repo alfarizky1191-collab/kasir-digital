@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Order {
+  id             String      @id
+  customerName   String
+  tableNumber    String?
+  status         String
+  paymentStatus  String
+  paymentMethod  String?
+  paymentAmount  Int?
+  changeAmount   Int?
+  total          Int
+  createdAt      DateTime
+
+  items          OrderItem[]
+}
+
+model OrderItem {
+  id        Int    @id @default(autoincrement())
+
+  name      String
+  qty       Int
+  price     Int
+
+  orderId   String
+  order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+model Shift {
+  id             String   @id
+  cashierName    String
+
+  openingCash    Int
+  closingCash    Int?
+
+  expectedCash   Int?
+  actualCash     Int?
+
+  difference     Int?
+
+  status         String
+
+  notes          String?
+
+  openedAt       DateTime
+  closedAt       DateTime?
+}
+model AuditLog {
+  id          String   @id
+
+  action      String
+  reason      String?
+
+  orderId     String?
+
+  cashierName String
+
+  createdAt   DateTime
+}
