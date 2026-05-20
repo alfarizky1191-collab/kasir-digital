@@ -5,9 +5,7 @@ import { QRCodeCanvas } from 'qrcode.react'
 
 const tables = Array.from({ length: 10 }, (_, i) => i + 1)
 
-const BASE_URL =
-  process.env.NEXT_PUBLIC_BASE_URL ||
-  'https://kasir-digital.vercel.app'
+const BASE_URL = 'https://kasir-digital.vercel.app'
 
 export default function QRPage() {
   const printAll = () => {
@@ -45,12 +43,14 @@ export default function QRPage() {
 
                 <QRCodeCanvas
                   value={qrUrl}
-                  size={160}
+                  size={220}
+                  level="H"
+                  includeMargin={true}
                   fgColor="#000000"
                   bgColor="#ffffff"
                 />
 
-                <p className="mt-3 text-zinc-400 text-center break-all">
+                <p className="mt-3 text-zinc-400 text-center break-all text-xs">
                   {qrUrl}
                 </p>
               </div>
