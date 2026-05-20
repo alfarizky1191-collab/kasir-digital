@@ -158,15 +158,15 @@ function MenuContent() {
       process.env.NEXT_PUBLIC_API_URL ||
       'https://kasir-digital-production.up.railway.app'
 
-    const payload = {
-      customerName: table ? `TABLE ${table}` : 'Walk In',
-      tableNumber: table,
-      items: cart.map((item) => ({
-        name: item.name,
-        qty: item.qty,
-        price: item.price,
-      })),
-    }
+   const payload = {
+  customerName: table ? `TABLE ${table}` : 'Walk In',
+  tableNumber: table ? Number(table) : null,
+  items: cart.map((item) => ({
+    name: item.name,
+    qty: item.qty,
+    price: item.price,
+  })),
+}
 
     console.log('CHECKOUT PAYLOAD:', payload)
 
