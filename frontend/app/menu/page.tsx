@@ -147,38 +147,60 @@ function MenuContent() {
   const totalItems = useMemo(() => cart.reduce((acc, item) => acc + item.qty, 0), [cart])
 
   const checkout = async () => {
-    if (cart.length === 0 || loading) return
-    setLoading(true)
+  if (cart.length === 0 || loading) return
 
-    try {
-      const table = search?.get('table') || undefined
+  setLoading(true)
 
-      const response = await fetch('http://localhost:3001/api/orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          customerName: 'Alfa',
-          tableNumber: table,
-          items: cart.map((item) => ({ name: item.name, qty: item.qty, price: item.price })),
-        }),
-      })
+  try {
+    const table = search?.get('table') || undefined
 
-      if (!response.ok) {
-        const text = await response.text()
-        console.error('CHECKOUT API ERROR:', text)
-        throw new Error(text || 'Checkout failed')
-      }
+    const API_URL =
+      process.env.NEXT_PUBLIC_API_URL ||
+      'https://kasir-digital-production.up.railway.app'
 
-      await response.json()
-      setCart([])
-      window.alert('Order berhasil dibuat')
-    } catch (error) {
-      console.error(error)
-      window.alert('Checkout gagal')
-    } finally {
-      setLoading(false)
+    const payload = {
+      customerName: table ? `TABLE ${table}` : 'Walk In',
+      tableNumber: table,
+      items: cart.map((item) => ({
+        name: item.name,
+        qty: item.qty,
+        price: item.price,
+      })),
     }
+
+    console.log('CHECKOUT PAYLOAD:', payload)
+
+    const response = await fetch(`${API_URL}/api/orders`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!response.ok) {
+      const text = await response.text()
+
+      console.error('CHECKOUT API ERROR:', text)
+
+      throw new Error(text || 'Checkout failed')
+    }
+
+    const result = await response.json()
+
+    console.log('CHECKOUT SUCCESS:', result)
+
+    setCart([])
+
+    window.alert('Order berhasil dibuat')
+  } catch (error) {
+    console.error('CHECKOUT ERROR:', error)
+
+    window.alert('Checkout gagal')
+  } finally {
+    setLoading(false)
   }
+}
 
   return (
     <div className="min-h-screen bg-black text-white pb-40">
