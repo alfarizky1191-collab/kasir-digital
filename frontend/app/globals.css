@@ -11,3 +11,55 @@ body {
   font-family: Arial, Helvetica,
     sans-serif;
 }
+
+/* =====================================================
+   Thermal receipt print rules (58mm)
+   Used by /receipt/[id]
+   ===================================================== */
+@media print {
+  @page {
+    size: 58mm auto;
+    margin: 0;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+
+  /* Hide global chrome and any element explicitly opted out of print */
+  body > nav,
+  body > header,
+  body > footer,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Receipt container takes the full thermal width */
+  .thermal-receipt {
+    width: 58mm !important;
+    max-width: 58mm !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  .thermal-receipt * {
+    color: #000000 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  /* Avoid breaking line items across pages */
+  .thermal-receipt .thermal-item {
+    page-break-inside: avoid;
+  }
+}
