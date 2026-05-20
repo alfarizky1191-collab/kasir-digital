@@ -25,8 +25,10 @@ const menus = [
 
 export default function Navbar() {
   const pathname = usePathname()
-  // hide navbar for receipt printing pages
-  if (pathname?.startsWith('/receipt')) {
+  const isCustomerMenu = pathname.startsWith('/menu')
+
+  // hide navbar for receipt printing pages and customer menu ordering
+  if (isCustomerMenu || pathname.startsWith('/receipt')) {
     return null
   }
 
