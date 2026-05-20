@@ -107,7 +107,9 @@ export default function CashierPage() {
         setPayAmount('')
       }
 
-      const paidQuery = paymentAmount ? `?paid=${encodeURIComponent(String(paymentAmount))}` : ''
+      const paidQuery = paymentAmount
+        ? `?paid=${encodeURIComponent(String(paymentAmount))}&autoprint=1`
+        : `?autoprint=1`
 
       window.open(`/receipt/${id}${paidQuery}`, '_blank')
     } catch (error) {
