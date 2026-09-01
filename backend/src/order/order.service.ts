@@ -1,11 +1,14 @@
-﻿import {
+import {
+  BadRequestException,
+  ConflictException,
   Injectable,
   NotFoundException,
-} from '@nestjs/common';
+} from '@nestjs/common'
+import { randomUUID } from 'node:crypto'
 
-import { PrismaService } from '../prisma/prisma.service';
-
-import { SocketGateway } from '../socket/socket.gateway';
+import { PrismaService } from '../prisma/prisma.service'
+import { SocketGateway } from '../socket/socket.gateway'
+import { getCatalogPrice } from './catalog'
 
 @Injectable()
 export class OrderService {
@@ -14,193 +17,121 @@ export class OrderService {
     private socketGateway: SocketGateway,
   ) {}
 
-  async getKitchenOrders() {
-    // include 'ready' so DONE orders are visible in kitchen KDS
+  getKitchenOrders() {
     return this.prisma.order.findMany({
-      where: {
-        OR: [
-          { status: 'pending' },
-          { status: 'cooking' },
-          { status: 'ready' },
-        ],
-      },
-
-      include: {
-        items: true,
-      },
-
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+      where: { status: { in: ['pending', 'cooking', 'ready'] } },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+    })
   }
 
-  async getCashierOrders() {
+  getCashierOrders() {
     return this.prisma.order.findMany({
-      where: {
-        status: 'ready',
-        paymentStatus: 'unpaid',
-      },
-
-      include: {
-        items: true,
-      },
-
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+      where: { status: 'ready', paymentStatus: 'unpaid' },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+    })
   }
 
-  async getHistoryOrders() {
+  getHistoryOrders() {
     return this.prisma.order.findMany({
-      where: {
-        paymentStatus: 'paid',
-      },
-
-      include: {
-        items: true,
-      },
-
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+      where: { paymentStatus: 'paid' },
+      include: { items: true },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    })
   }
 
   async createOrder(body: {
-    customerName: string;
-
-    items: {
-      name: string;
-      qty: number;
-      price: number;
-    }[];
-
-    tableNumber?: string;
+    customerName: string
+    tableNumber?: string
+    items: { name: string; qty: number; price?: number }[]
   }) {
-    // Generate incremental order id ORD-0001, ORD-0002 ...
-    const last = await this.prisma.order.findFirst({
-      orderBy: { createdAt: 'desc' },
-    });
-
-    let nextNum = 1
-
-    if (last && last.id) {
-      const m = last.id.match(/ORD-(\d+)/)
-
-      if (m) {
-        nextNum = parseInt(m[1], 10) + 1
-      }
+    if (!body || !Array.isArray(body.items) || body.items.length === 0) {
+      throw new BadRequestException('Order must contain at least one item')
+    }
+    if (body.items.length > 50) {
+      throw new BadRequestException('Too many items in one order')
     }
 
-    const orderId = `ORD-${String(nextNum).padStart(4, '0')}`
+    const validatedItems = body.items.map((item) => {
+      const name = typeof item?.name === 'string' ? item.name.trim() : ''
+      const qty = Number(item?.qty)
+      const price = getCatalogPrice(name)
 
-    // If tableNumber provided, append to customerName for minimal schema-safe storage
-    const customerName = body.tableNumber
-      ? `${body.customerName || 'Guest'} (Table ${body.tableNumber})`
-      : body.customerName || 'Guest'
-
-    try {
-      const order = await this.prisma.order.create({
-        data: {
-          id: orderId,
-
-          customerName,
-          tableNumber: body.tableNumber || null,
-
-          status: 'pending',
-
-          paymentStatus: 'unpaid',
-
-          total: body.items.reduce((acc, item) => acc + item.price * item.qty, 0),
-
-          createdAt: new Date(),
-
-          items: {
-            create: body.items.map((item) => ({
-              name: item.name,
-              qty: item.qty,
-              price: item.price,
-            })),
-          },
-        },
-
-        include: {
-          items: true,
-        },
-      })
-
-      try {
-        this.socketGateway.emitOrdersUpdated()
-      } catch (emitErr) {
-        console.error('Socket emit error after createOrder:', emitErr)
+      if (!name || name.length > 120 || price === undefined) {
+        throw new BadRequestException(`Unknown menu item: ${name || '-'}`)
       }
+      if (!Number.isInteger(qty) || qty < 1 || qty > 99) {
+        throw new BadRequestException(`Invalid quantity for ${name}`)
+      }
+      return { name, qty, price }
+    })
 
-      return order
-    } catch (err) {
-      console.error('Prisma create error in createOrder:', err)
-      console.error('createOrder payload:', body)
-      throw err
+    const tableNumber = body.tableNumber == null ? null : String(body.tableNumber).trim()
+    if (tableNumber && (!/^\d{1,3}$/.test(tableNumber) || Number(tableNumber) < 1)) {
+      throw new BadRequestException('Invalid table number')
     }
+
+    const baseCustomerName = typeof body.customerName === 'string'
+      ? body.customerName.trim().slice(0, 80)
+      : ''
+    const customerName = tableNumber
+      ? `${baseCustomerName || 'Guest'} (Table ${tableNumber})`
+      : baseCustomerName || 'Guest'
+
+    const order = await this.prisma.order.create({
+      data: {
+        id: `ORD-${randomUUID().slice(0, 8).toUpperCase()}`,
+        customerName,
+        tableNumber,
+        status: 'pending',
+        paymentStatus: 'unpaid',
+        total: validatedItems.reduce((sum, item) => sum + item.price * item.qty, 0),
+        createdAt: new Date(),
+        items: { create: validatedItems },
+      },
+      include: { items: true },
+    })
+
+    this.emitOrdersUpdated()
+    return order
   }
 
-  async updateStatus(
-    id: string,
-    status:
-      | 'pending'
-      | 'cooking'
-      | 'ready',
-  ) {
-    const order =
-      await this.prisma.order.findUnique({
-        where: { id },
-      });
+  async updateStatus(id: string, status: 'pending' | 'cooking' | 'ready') {
+    const order = await this.prisma.order.findUnique({ where: { id } })
+    if (!order) throw new NotFoundException(`Order ${id} not found`)
 
-    if (!order) {
-      throw new NotFoundException(
-        `Order ${id} not found`,
-      );
+    const allowedTransitions: Record<string, string[]> = {
+      pending: ['cooking'],
+      cooking: ['ready'],
+      ready: [],
+    }
+    if (!allowedTransitions[order.status]?.includes(status)) {
+      throw new ConflictException(`Cannot change order from ${order.status} to ${status}`)
     }
 
-    const updated =
-      await this.prisma.order.update({
-        where: { id },
-
-        data: {
-          status,
-        },
-
-        include: {
-          items: true,
-        },
-      });
-
-    this.socketGateway.emitOrdersUpdated();
-
-    return updated;
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: { status },
+      include: { items: true },
+    })
+    this.emitOrdersUpdated()
+    return updated
   }
 
   async deleteOrder(id: string) {
     const order = await this.prisma.order.findUnique({ where: { id } })
-
-    if (!order) {
-      throw new NotFoundException(`Order ${id} not found`)
+    if (!order) throw new NotFoundException(`Order ${id} not found`)
+    if (order.paymentStatus === 'paid') {
+      throw new ConflictException('Paid orders cannot be deleted')
     }
-
-    // Only allow deleting orders that are already marked ready
     if (order.status !== 'ready') {
-      throw new NotFoundException(`Order ${id} is not ready to be cleared`)
+      throw new ConflictException(`Order ${id} is not ready to be cleared`)
     }
 
     const deleted = await this.prisma.order.delete({ where: { id } })
-
-    try {
-      this.socketGateway.emitOrdersUpdated()
-    } catch (err) {
-      console.error('Socket emit error after deleteOrder:', err)
-    }
-
+    this.emitOrdersUpdated()
     return deleted
   }
 
@@ -209,52 +140,43 @@ export class OrderService {
     paymentMethod: 'cash' | 'qris',
     paymentAmount?: number,
   ) {
-    let order: any = null
-
-    try {
-      order = await this.prisma.order.findUnique({ where: { id } })
-    } catch (err) {
-      console.error('Prisma findUnique error in updatePayment:', err)
-      console.error('Request id:', id)
-      throw err
+    const order = await this.prisma.order.findUnique({ where: { id } })
+    if (!order) throw new NotFoundException(`Order ${id} not found`)
+    if (order.status !== 'ready') {
+      throw new ConflictException('Only ready orders can be paid')
+    }
+    if (order.paymentStatus === 'paid') {
+      throw new ConflictException('Order is already paid')
+    }
+    if (!['cash', 'qris'].includes(paymentMethod)) {
+      throw new BadRequestException('Invalid payment method')
     }
 
-    if (!order) {
-      throw new NotFoundException(`Order ${id} not found`)
+    const amount = paymentMethod === 'qris' ? order.total : Number(paymentAmount)
+    if (!Number.isInteger(amount) || amount < order.total) {
+      throw new BadRequestException('Payment amount is less than order total')
     }
 
-    const dataUpdate: any = {
-      paymentStatus: 'paid',
-      paymentMethod,
-    }
+    const updated = await this.prisma.order.update({
+      where: { id },
+      data: {
+        paymentStatus: 'paid',
+        paymentMethod,
+        paymentAmount: amount,
+        changeAmount: amount - order.total,
+        paidAt: new Date(),
+      },
+      include: { items: true },
+    })
+    this.emitOrdersUpdated()
+    return updated
+  }
 
-    if (typeof paymentAmount === 'number') {
-      dataUpdate.paymentAmount = paymentAmount
-
-      const change = paymentAmount - order.total
-      dataUpdate.changeAmount = change
-    }
-
-    let updated: any = null
-
-    try {
-      updated = await this.prisma.order.update({
-        where: { id },
-        data: dataUpdate,
-        include: { items: true },
-      })
-    } catch (err) {
-      console.error('Prisma update error in updatePayment:', err)
-      console.error('update payload:', { id, dataUpdate })
-      throw err
-    }
-
+  private emitOrdersUpdated() {
     try {
       this.socketGateway.emitOrdersUpdated()
-    } catch (err) {
-      console.error('Socket emit error after payment update:', err)
+    } catch (error) {
+      console.error('Socket emit failed', error)
     }
-
-    return updated
   }
 }

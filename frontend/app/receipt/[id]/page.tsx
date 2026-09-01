@@ -32,7 +32,7 @@ export default function ReceiptPage() {
   useEffect(() => {
     const fetchOrder = async () => {
       try {
-        const response = await fetch('http://localhost:3001/api/orders/history')
+        const response = await fetch('/api/orders/history')
 
         if (!response.ok) return
 

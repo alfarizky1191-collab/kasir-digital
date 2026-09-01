@@ -37,7 +37,7 @@ export default function CashierPage() {
   const fetchOrders = async () => {
     try {
       const response = await fetch(
-        'http://localhost:3001/api/orders/cashier',
+        '/api/orders/cashier',
       )
 
       const data = await response.json()
@@ -58,7 +58,7 @@ export default function CashierPage() {
     fetchOrders()
 
     const socket = io(
-      'http://localhost:3001',
+      '',
     )
 
     socket.on('ordersUpdated', () => {
@@ -77,7 +77,7 @@ export default function CashierPage() {
   ) => {
     try {
       const response = await fetch(
-        `http://localhost:3001/api/orders/${id}/payment`,
+        `/api/orders/${id}/payment`,
         {
           method: 'PATCH',
           headers: {
@@ -125,7 +125,7 @@ export default function CashierPage() {
   ) => {
     try {
       await fetch(
-        'http://localhost:3001/api/audit',
+        '/api/audit',
         {
           method: 'POST',
 

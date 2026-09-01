@@ -22,7 +22,7 @@ export default function AdminPage() {
   const fetchOrders = async () => {
     try {
       const response = await fetch(
-        'http://localhost:3001/api/orders/history',
+        '/api/orders/history',
       )
 
       const data = await response.json()
