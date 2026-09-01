@@ -27,7 +27,7 @@ export default function HistoryPage() {
   const fetchHistory = async () => {
     try {
       const response = await fetch(
-        'http://localhost:3001/api/orders/history',
+        '/api/orders/history',
       )
 
       const data = await response.json()

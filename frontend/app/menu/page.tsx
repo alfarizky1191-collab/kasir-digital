@@ -154,10 +154,6 @@ function MenuContent() {
   try {
     const table = search?.get('table') || undefined
 
-    const API_URL =
-      process.env.NEXT_PUBLIC_API_URL ||
-      'https://kasir-digital-production.up.railway.app'
-
    const payload = {
   customerName: table ? `TABLE ${table}` : 'Walk In',
   tableNumber: table ? Number(table) : null,
@@ -170,7 +166,7 @@ function MenuContent() {
 
     console.log('CHECKOUT PAYLOAD:', payload)
 
-    const response = await fetch(`${API_URL}/api/orders`, {
+    const response = await fetch('/api/orders', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

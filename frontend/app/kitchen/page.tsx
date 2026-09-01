@@ -48,7 +48,7 @@
 
    const fetchOrders = async () => {
      try {
-       const res = await fetch('http://localhost:3001/api/orders/kitchen')
+       const res = await fetch('/api/orders/kitchen')
        if (!res.ok) {
          setOrders([])
          return
@@ -128,7 +128,7 @@
 
    const updateStatus = async (id: string, status: 'cooking' | 'ready') => {
      try {
-       await fetch(`http://localhost:3001/api/orders/${id}/status`, {
+       await fetch(`/api/orders/${id}/status`, {
          method: 'PATCH',
          headers: { 'Content-Type': 'application/json' },
          body: JSON.stringify({ status }),
@@ -148,7 +148,7 @@
   // remove an order after it has been served/cleared
   const clearOrder = async (id: string) => {
     try {
-      const res = await fetch(`http://localhost:3001/api/orders/${id}`, {
+      const res = await fetch(`/api/orders/${id}`, {
         method: 'DELETE',
       })
 

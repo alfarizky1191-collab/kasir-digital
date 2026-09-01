@@ -19,7 +19,7 @@ export default function AuditPage() {
   const fetchLogs = async () => {
     try {
       const response = await fetch(
-        'http://localhost:3001/api/audit',
+        '/api/audit',
       )
 
       const data = await response.json()

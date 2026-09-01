@@ -3,6 +3,7 @@
 import { QRCodeSVG } from 'qrcode.react';
 
 export default function QRPage() {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://kasir-digital.vercel.app';
   const tables = [
     'A1',
     'A2',
@@ -29,7 +30,7 @@ export default function QRPage() {
 
             <div className="flex justify-center">
               <QRCodeSVG
-                value={`http://192.168.1.15:3000/menu?table=${table}`}
+                value={`${baseUrl}/menu?table=${table}`}
                 size={220}
               />
             </div>

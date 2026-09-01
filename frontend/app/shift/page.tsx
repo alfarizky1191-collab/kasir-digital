@@ -31,7 +31,7 @@ export default function ShiftPage() {
   const fetchShift = async () => {
     try {
       const response = await fetch(
-        'http://localhost:3001/api/shifts/active',
+        '/api/shifts/active',
       )
 
       if (!response.ok) {
@@ -79,7 +79,7 @@ export default function ShiftPage() {
 
   const fetchSalesToday = async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/orders/history')
+      const res = await fetch('/api/orders/history')
 
       if (!res.ok) return
 
@@ -117,7 +117,7 @@ export default function ShiftPage() {
       const ok = confirm(`Open shift with opening cash: Rp ${cash.toLocaleString('id-ID')} ?`)
       if (!ok) return
 
-      const response = await fetch('http://localhost:3001/api/shifts/open', {
+      const response = await fetch('/api/shifts/open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ cashierName: 'Alfa', openingCash: cash }),
@@ -160,10 +160,10 @@ export default function ShiftPage() {
       const ok = confirm(summary + '\n\nProceed to close shift?')
       if (!ok) return
 
-      const response = await fetch('http://localhost:3001/api/shifts/close', {
+      const response = await fetch('/api/shifts/close', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ shiftId: shift.id, actualCash: actual, expectedCash, notes }),
+        body: JSON.stringify({ shiftId: shift.id, actualCash: actual, notes }),
       })
 
       if (!response.ok) {

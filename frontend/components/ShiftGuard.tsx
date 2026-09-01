@@ -37,12 +37,12 @@ export default function ShiftGuard() {
 
     ;(async () => {
       try {
-        const res = await fetch('http://localhost:3001/api/shifts/active', { cache: 'no-store' })
+        const res = await fetch('/api/shifts/active', { cache: 'no-store' })
         if (res.ok) {
           const data = await res.json()
 
           // if no active shift (null/undefined/empty), redirect to /shift
-          if (!data) {
+          if (!data?.data) {
             router.replace('/shift')
           }
         } else {

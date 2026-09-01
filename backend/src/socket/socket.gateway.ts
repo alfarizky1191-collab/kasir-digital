@@ -7,7 +7,10 @@ import { Server } from 'socket.io'
 
 @WebSocketGateway({
   cors: {
-    origin: '*',
+    origin: process.env.CORS_ORIGINS
+      ?.split(',')
+      .map((origin) => origin.trim())
+      .filter(Boolean) ?? ['http://localhost:3000'],
   },
 })
 export class SocketGateway {

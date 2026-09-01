@@ -16,6 +16,7 @@ model Order {
   paymentMethod  String?
   paymentAmount  Int?
   changeAmount   Int?
+  paidAt         DateTime?
   total          Int
   createdAt      DateTime
 
@@ -45,6 +46,7 @@ model Shift {
   difference     Int?
 
   status         String
+  activeKey      String?  @unique
 
   notes          String?
 

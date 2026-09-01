@@ -93,7 +93,6 @@ export class ShiftController {
     body: {
       shiftId: string
       actualCash: number
-      expectedCash: number
       notes?: string
     },
   ) {
@@ -101,7 +100,6 @@ export class ShiftController {
       const payload = {
         shiftId: body.shiftId,
         actualCash: Number(body.actualCash) || 0,
-        expectedCash: Number(body.expectedCash) || 0,
         notes: body.notes,
       }
 
