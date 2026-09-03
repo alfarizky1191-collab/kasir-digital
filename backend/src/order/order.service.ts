@@ -7,7 +7,6 @@ import {
 import { randomUUID } from 'node:crypto'
 
 import { PrismaService } from '../prisma/prisma.service'
-import { SocketGateway } from '../socket/socket.gateway'
 import { AuditService } from '../audit/audit.service'
 import type { SessionUser } from '../auth/auth.types'
 
@@ -17,7 +16,6 @@ type IncomingItem = { productId?: string; name?: string; qty: number }
 export class OrderService {
   constructor(
     private prisma: PrismaService,
-    private socketGateway: SocketGateway,
     private audit: AuditService,
   ) {}
 
@@ -121,7 +119,6 @@ export class OrderService {
       })
     })
 
-    this.emitOrdersUpdated()
     return order
   }
 
@@ -133,7 +130,6 @@ export class OrderService {
     }
     const updated = await this.prisma.order.update({ where: { id }, data: { status }, include: { items: true } })
     await this.audit.record(user, 'ORDER_STATUS_CHANGED', { orderId: id, metadata: { from: order.status, to: status } })
-    this.emitOrdersUpdated()
     return updated
   }
 
@@ -158,7 +154,6 @@ export class OrderService {
       })
     })
     await this.audit.record(user, 'ORDER_VOIDED', { orderId: id, reason: cleanReason })
-    this.emitOrdersUpdated()
     return updated
   }
 
@@ -184,7 +179,6 @@ export class OrderService {
       return tx.order.findUniqueOrThrow({ where: { id }, include: { items: true } })
     })
     await this.audit.record(user, 'ORDER_PAID', { orderId: id, metadata: { paymentMethod, amount } })
-    this.emitOrdersUpdated()
     return updated
   }
 
@@ -201,7 +195,6 @@ export class OrderService {
       return tx.order.findUniqueOrThrow({ where: { id }, include: { items: true } })
     })
     await this.audit.record(user, 'ORDER_REFUNDED', { orderId: id, reason: cleanReason, metadata: { total: order.total } })
-    this.emitOrdersUpdated()
     return updated
   }
 
@@ -217,7 +210,4 @@ export class OrderService {
     return clean
   }
 
-  private emitOrdersUpdated() {
-    try { this.socketGateway.emitOrdersUpdated() } catch (error) { console.error('Socket emit failed', error) }
-  }
 }

@@ -3,7 +3,6 @@ import { APP_GUARD } from '@nestjs/core'
 
 import { OrderModule } from './order/order.module'
 import { PrismaModule } from './prisma/prisma.module'
-import { SocketModule } from './socket/socket.module'
 import { ShiftModule } from './shift/shift.module'
 import { AuditModule } from './audit/audit.module'
 import { AuthModule } from './auth/auth.module'
@@ -16,7 +15,6 @@ import { ReportModule } from './report/report.module'
 @Module({
   imports: [
     PrismaModule,
-    SocketModule,
     OrderModule,
     ShiftModule,
     AuditModule,

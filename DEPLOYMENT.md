@@ -1,10 +1,10 @@
 # Production deployment
 
-## Backend
+## Backend on Vercel
 
-Set the variables shown in `backend/.env.example`, then deploy from the `backend` directory.
+Create a separate Vercel project with `backend` as its root directory. Set the variables shown in `backend/.env.example`. The API runs as a serverless function, so no Railway service is required.
 
-Run these commands once for each release and initial owner setup:
+Connect a managed PostgreSQL database (for example, a free Neon database from the Vercel Marketplace) and use its pooled connection string as `DATABASE_URL`. Run these commands once for each release and initial owner setup:
 
 ```bash
 npx prisma migrate deploy
@@ -15,7 +15,7 @@ npm run seed
 
 ## Frontend
 
-Deploy from the `frontend` directory and set `BACKEND_URL` to the backend origin. Browser requests use the frontend's same-origin `/api` rewrite, so the session cookie remains first-party.
+Deploy from the `frontend` directory and set `BACKEND_URL` to the backend Vercel origin. Browser requests use the frontend's same-origin `/api` rewrite, so the session cookie remains first-party.
 
 ## Release checks
 
