@@ -13,6 +13,8 @@ type Shift = {
   status: string
 }
 
+type HistoryOrder = { createdAt: string; total?: number }
+
 export default function ShiftPage() {
   const [shift, setShift] =
     useState<Shift | null>(null)
@@ -49,7 +51,7 @@ export default function ShiftPage() {
         return
       }
 
-      let parsed: any = null
+      let parsed: { success?: boolean; data?: Shift | null } | null = null
 
       try {
         parsed = JSON.parse(text)
@@ -60,7 +62,7 @@ export default function ShiftPage() {
       }
 
       if (parsed && parsed.success) {
-        setShift(parsed.data)
+        setShift(parsed.data ?? null)
       } else {
         console.error('fetchShift: unexpected payload', parsed)
         setShift(null)
@@ -70,14 +72,9 @@ export default function ShiftPage() {
     }
   }
 
-  useEffect(() => {
-    fetchShift()
-    fetchSalesToday()
-  }, [])
-
   const router = useRouter()
 
-  const fetchSalesToday = async () => {
+  async function fetchSalesToday() {
     try {
       const res = await fetch('/api/orders/history')
 
@@ -86,7 +83,7 @@ export default function ShiftPage() {
       const all = await res.json()
 
       const today = new Date()
-      const sum = all.reduce((acc: number, o: any) => {
+      const sum = all.reduce((acc: number, o: HistoryOrder) => {
         const d = new Date(o.createdAt)
         if (
           d.getFullYear() === today.getFullYear() &&
@@ -105,6 +102,14 @@ export default function ShiftPage() {
     }
   }
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void fetchShift()
+      void fetchSalesToday()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [])
+
   const openShift = async () => {
     try {
       const cash = Number(openingCash) || 0
@@ -120,7 +125,7 @@ export default function ShiftPage() {
       const response = await fetch('/api/shifts/open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cashierName: 'Alfa', openingCash: cash }),
+        body: JSON.stringify({ openingCash: cash }),
       })
 
       if (!response.ok) {

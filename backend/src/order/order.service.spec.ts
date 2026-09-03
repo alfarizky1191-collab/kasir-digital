@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { OrderService } from './order.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { SocketGateway } from '../socket/socket.gateway';
+import { AuditService } from '../audit/audit.service';
 
 describe('OrderService', () => {
   let service: OrderService;
@@ -12,6 +13,7 @@ describe('OrderService', () => {
         OrderService,
         { provide: PrismaService, useValue: {} },
         { provide: SocketGateway, useValue: { emitOrdersUpdated: jest.fn() } },
+        { provide: AuditService, useValue: { record: jest.fn() } },
       ],
     }).compile();
 

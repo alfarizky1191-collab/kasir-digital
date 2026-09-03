@@ -1,67 +1,59 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+
+type User = { name: string; role: 'owner' | 'admin' | 'cashier' | 'kitchen' }
 
 const menus = [
-  {
-    name: 'Menu',
-    href: '/menu',
-  },
-  {
-    name: 'Kitchen',
-    href: '/kitchen',
-  },
-  {
-    name: 'Cashier',
-    href: '/cashier',
-  },
-  {
-    name: 'Shift',
-    href: '/shift',
-  },
-  // Backoffice links hidden from POS navbar
-]
+  { name: 'Admin', href: '/admin', roles: ['owner', 'admin'] },
+  { name: 'Menu', href: '/admin/products', roles: ['owner', 'admin'] },
+  { name: 'Laporan', href: '/admin/reports', roles: ['owner', 'admin'] },
+  { name: 'Pengguna', href: '/admin/users', roles: ['owner'] },
+  { name: 'Dapur', href: '/kitchen', roles: ['owner', 'admin', 'kitchen'] },
+  { name: 'Kasir', href: '/cashier', roles: ['owner', 'admin', 'cashier'] },
+  { name: 'Shift', href: '/shift', roles: ['owner', 'admin', 'cashier'] },
+] as const
 
 export default function Navbar() {
   const pathname = usePathname()
-  const isCustomerMenu = pathname.startsWith('/menu')
+  const router = useRouter()
+  const [user, setUser] = useState<User | null>(null)
+  const hidden = ['/menu', '/receipt', '/login'].some(
+    (path) => pathname === path || pathname.startsWith(`${path}/`),
+  )
 
-  // hide navbar for receipt printing pages and customer menu ordering
-  if (isCustomerMenu || pathname.startsWith('/receipt')) {
-    return null
+  useEffect(() => {
+    if (hidden) return
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((response) => response.ok ? response.json() : null)
+      .then((result) => setUser(result?.user || null))
+      .catch(() => setUser(null))
+  }, [hidden, pathname])
+
+  async function logout() {
+    await fetch('/api/auth/logout', { method: 'POST' })
+    router.replace('/login')
   }
 
+  if (hidden) return null
+
   return (
-    <div className="sticky top-0 z-50 bg-black/90 backdrop-blur border-b border-zinc-800">
-      <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between gap-4 overflow-x-auto">
-        <div className="min-w-fit">
-          <h1 className="text-xl md:text-2xl font-black text-white">
-            NOIR POS
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-2 min-w-fit">
-          {menus.map((menu) => {
-            const active =
-              pathname === menu.href
-
-            return (
-              <Link
-                key={menu.href}
-                href={menu.href}
-                className={`px-4 py-2 rounded-2xl text-sm md:text-base font-bold whitespace-nowrap transition ${
-                  active
-                    ? 'bg-orange-500 text-white'
-                    : 'bg-zinc-900 text-zinc-300 hover:bg-zinc-800'
-                }`}
-              >
-                {menu.name}
-              </Link>
-            )
-          })}
-        </div>
+    <nav className="sticky top-0 z-50 border-b border-zinc-800 bg-black/90 backdrop-blur">
+      <div className="mx-auto flex max-w-7xl items-center gap-4 overflow-x-auto px-4 py-4">
+        <h1 className="mr-auto min-w-fit text-xl font-black text-white md:text-2xl">NOIR POS</h1>
+        {user ? menus.filter((menu) => (menu.roles as readonly string[]).includes(user.role)).map((menu) => (
+          <Link key={menu.href} href={menu.href} className={`whitespace-nowrap rounded-xl px-3 py-2 text-sm font-bold ${pathname === menu.href ? 'bg-orange-500 text-black' : 'bg-zinc-900 text-zinc-300'}`}>
+            {menu.name}
+          </Link>
+        )) : null}
+        {user ? (
+          <button onClick={logout} title={`Keluar sebagai ${user.name}`} className="whitespace-nowrap rounded-xl border border-zinc-700 px-3 py-2 text-sm font-bold text-zinc-300">
+            Keluar
+          </button>
+        ) : null}
       </div>
-    </div>
+    </nav>
   )
 }

@@ -7,8 +7,6 @@ import {
   useSearchParams,
 } from 'next/navigation'
 
-import { socket } from '../lib/socket'
-
 function WaitingContent() {
   const router = useRouter()
 
@@ -22,31 +20,24 @@ function WaitingContent() {
     useState('pending')
 
   useEffect(() => {
-    const handleOrderUpdated = (
-      order: any
-    ) => {
-      if (order.id !== orderId)
-        return
-
+    if (!orderId) return
+    let redirectTimer: ReturnType<typeof setTimeout> | undefined
+    const checkStatus = async () => {
+      const response = await fetch(`/api/orders/${orderId}/status`, { cache: 'no-store' })
+      if (!response.ok) return
+      const order = await response.json()
+      if (!order) return
       setStatus(order.status)
-
-      if (order.status === 'done') {
-        setTimeout(() => {
-          router.push('/done')
-        }, 1500)
+      if (order.status === 'ready') {
+        redirectTimer = setTimeout(() => router.push('/done'), 1500)
       }
     }
-
-    socket.on(
-      'order-updated',
-      handleOrderUpdated
-    )
+    void checkStatus()
+    const interval = setInterval(checkStatus, 3000)
 
     return () => {
-      socket.off(
-        'order-updated',
-        handleOrderUpdated
-      )
+      clearInterval(interval)
+      if (redirectTimer) clearTimeout(redirectTimer)
     }
   }, [router, orderId])
 
