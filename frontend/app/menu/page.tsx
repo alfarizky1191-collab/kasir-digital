@@ -1,7 +1,8 @@
 ﻿'use client'
 
-import { Suspense, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { Suspense, useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type MenuItem = {
   id: string
@@ -11,83 +12,27 @@ type MenuItem = {
   best?: boolean
   level?: boolean
   tipe?: boolean
+  flavors?: string[]
 }
 
 type CartItem = {
   id: string
+  productId: string
   name: string
   price: number
   qty: number
   meta?: Record<string, string>
 }
 
-const items: Omit<MenuItem, 'id'>[] = [
-  {
-    name: 'Batagor',
-    price: 5000,
-    img: 'https://i.imgur.com/JiFateR.jpeg',
-    best: true,
-    tipe: true,
-  },
-
-  {
-    name: 'Mie Level',
-    price: 8000,
-    level: true,
-    img: 'https://i.imgur.com/u6FXtL7.jpeg',
-    best: true,
-  },
-
-  {
-    name: 'Cilok',
-    price: 5000,
-    img: 'https://i.imgur.com/xvHP2rG.jpeg',
-  },
-
-  {
-    name: 'Es Potong Milo (full)',
-    price: 4000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Es Potong Milo (half)',
-    price: 2000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Es Potong Real good (full)',
-    price: 2000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Es Potong Real good (1/2)',
-    price: 1000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Suki Bakar',
-    price: 5000,
-    img: 'https://i.imgur.com/LPkTB2B.jpeg',
-  },
-
-  {
-    name: 'Sosis Bakar',
-    price: 5000,
-    img: 'https://i.imgur.com/ZxwgE0.jpeg',
-  },
-
-  {
-    name: 'Jasuke',
-    price: 5000,
-    img: 'https://i.imgur.com/OGNZogQ.jpeg',
-  },
-]
-
-const menuData: MenuItem[] = items.map((it, idx) => ({ ...it, id: String(idx + 1) }))
+type ApiProduct = {
+  id: string
+  name: string
+  price: number
+  imageUrl?: string | null
+  hasLevel: boolean
+  hasType: boolean
+  flavors: string[]
+}
 
 const LEVEL_OPTIONS = [
   { label: 'Level 0', value: '0' },
@@ -97,14 +42,10 @@ const LEVEL_OPTIONS = [
   { label: 'Level 3', value: '3' },
 ]
 
-const REAL_GOOD_NAMES = [
-  'Es Potong Real good (full)',
-  'Es Potong Real good (1/2)',
-]
-
-const FLAVORS = ['coklat', 'strawberry', 'blueberry', 'guava', 'blackcurrant']
-
 function MenuContent() {
+  const router = useRouter()
+  const [menuData, setMenuData] = useState<MenuItem[]>([])
+  const [menuLoading, setMenuLoading] = useState(true)
   const [cart, setCart] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(false)
 
@@ -114,6 +55,27 @@ function MenuContent() {
   const [selectedOptions, setSelectedOptions] = useState<
     Record<string, { level?: string; tipe?: string; flavor?: string }>
   >({})
+
+  useEffect(() => {
+    fetch('/api/products')
+      .then((response) => {
+        if (!response.ok) throw new Error('Menu gagal dimuat')
+        return response.json()
+      })
+      .then((products) => {
+        setMenuData(products.map((product: ApiProduct) => ({
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          img: product.imageUrl || '/window.svg',
+          level: product.hasLevel,
+          tipe: product.hasType,
+          flavors: product.flavors || [],
+        })))
+      })
+      .catch((error) => console.error(error))
+      .finally(() => setMenuLoading(false))
+  }, [])
 
   const setOption = (id: string, key: 'level' | 'tipe' | 'flavor', value: string) => {
     setSelectedOptions((s) => ({ ...s, [id]: { ...(s[id] || {}), [key]: value } }))
@@ -138,7 +100,7 @@ function MenuContent() {
 
       return [
         ...prev,
-        { id: cartId, name: displayName, price: item.price, qty: 1, meta: { ...(opts as Record<string, string>) } },
+        { id: cartId, productId: item.id, name: displayName, price: item.price, qty: 1, meta: { ...(opts as Record<string, string>) } },
       ]
     })
   }
@@ -158,6 +120,7 @@ function MenuContent() {
   customerName: table ? `TABLE ${table}` : 'Walk In',
   tableNumber: table ? Number(table) : null,
   items: cart.map((item) => ({
+    productId: item.productId,
     name: item.name,
     qty: item.qty,
     price: item.price,
@@ -188,7 +151,7 @@ function MenuContent() {
 
     setCart([])
 
-    window.alert('Order berhasil dibuat')
+    router.push(`/waiting?id=${encodeURIComponent(result.id)}`)
   } catch (error) {
     console.error('CHECKOUT ERROR:', error)
 
@@ -206,6 +169,12 @@ function MenuContent() {
       </div>
 
       <div className="p-4 md:p-8">
+        {menuLoading ? <p className="text-zinc-400">Memuat menu...</p> : null}
+        {!menuLoading && menuData.length === 0 ? (
+          <p className="rounded-2xl border border-zinc-800 p-8 text-center text-zinc-400">
+            Menu belum tersedia.
+          </p>
+        ) : null}
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
           {menuData.map((item) => (
             <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden relative">
@@ -213,7 +182,9 @@ function MenuContent() {
                 <div className="absolute left-3 top-3 bg-orange-500 text-black px-3 py-1 rounded-full font-black text-xs">BEST</div>
               )}
 
-              <img src={item.img} alt={item.name} className="w-full h-60 object-cover" />
+              <div className="relative h-60 w-full">
+                <Image src={item.img} alt={item.name} fill sizes="(max-width: 640px) 100vw, 33vw" className="object-cover" />
+              </div>
 
               <div className="p-5">
                 <div className="flex items-start justify-between gap-4">
@@ -255,12 +226,12 @@ function MenuContent() {
                     </div>
                   )}
 
-                  {REAL_GOOD_NAMES.includes(item.name) && (
+                  {Boolean(item.flavors?.length) && (
                     <div className="flex items-center gap-2">
                       <label className="text-xs text-zinc-400 w-20">Rasa</label>
                       <select className="bg-zinc-800 px-3 py-2 rounded-lg" value={selectedOptions[item.id]?.flavor ?? ''} onChange={(e) => setOption(item.id, 'flavor', e.target.value)}>
                         <option value="">Pilih rasa</option>
-                        {FLAVORS.map((f) => (
+                        {item.flavors?.map((f) => (
                           <option key={f} value={f}>
                             {f}
                           </option>

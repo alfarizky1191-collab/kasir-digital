@@ -1,7 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { io } from 'socket.io-client'
 
 type OrderItem = {
   name: string
@@ -55,18 +54,13 @@ export default function CashierPage() {
   }
 
   useEffect(() => {
-    fetchOrders()
+    const timer = setTimeout(fetchOrders, 0)
 
-    const socket = io(
-      '',
-    )
-
-    socket.on('ordersUpdated', () => {
-      fetchOrders()
-    })
+    const interval = setInterval(fetchOrders, 3000)
 
     return () => {
-      socket.disconnect()
+      clearTimeout(timer)
+      clearInterval(interval)
     }
   }, [])
 
@@ -119,13 +113,10 @@ export default function CashierPage() {
     }
   }
 
-  const createAuditLog = async (
-    action: string,
-    orderId: string,
-  ) => {
+  const voidOrder = async (orderId: string) => {
     try {
-      await fetch(
-        '/api/audit',
+      const response = await fetch(
+        `/api/orders/${orderId}/void`,
         {
           method: 'POST',
 
@@ -135,23 +126,25 @@ export default function CashierPage() {
           },
 
           body: JSON.stringify({
-            action,
-            orderId,
-            cashierName: 'Alfa',
             reason,
           }),
         },
       )
 
+      if (!response.ok) {
+        const result = await response.json()
+        throw new Error(result.message || 'Void gagal')
+      }
+
       setSelectedOrder(null)
 
       setReason('')
 
-      window.alert(
-        `${action} berhasil`,
-      )
+      setOrders((current) => current.filter((order) => order.id !== orderId))
+      window.alert('Pesanan berhasil di-void')
     } catch (error) {
       console.error(error)
+      window.alert(error instanceof Error ? error.message : 'Void gagal')
     }
   }
 
@@ -323,14 +316,6 @@ export default function CashierPage() {
                   Void
                 </button>
 
-                <button
-                  onClick={() =>
-                    setSelectedOrder(order.id)
-                  }
-                  className="bg-red-600 hover:bg-red-700 active:scale-95 transition py-4 rounded-2xl text-lg md:text-xl font-black"
-                >
-                  Refund
-                </button>
               </div>
             </div>
           ))}
@@ -341,11 +326,11 @@ export default function CashierPage() {
         <div className="fixed inset-0 bg-black/80 backdrop-blur flex items-center justify-center z-50 p-4">
           <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6 w-full max-w-lg">
             <h2 className="text-3xl font-black mb-6">
-              Void / Refund
+              Void Pesanan
             </h2>
 
             <textarea
-              placeholder="Reason..."
+              placeholder="Alasan void..."
               value={reason}
               onChange={(e) =>
                 setReason(
@@ -355,29 +340,14 @@ export default function CashierPage() {
               className="w-full bg-black border border-zinc-700 rounded-2xl px-4 py-4 outline-none h-32"
             />
 
-            <div className="grid grid-cols-2 gap-3 mt-6">
+            <div className="mt-6">
               <button
                 onClick={() =>
-                  createAuditLog(
-                    'void',
-                    selectedOrder,
-                  )
+                  voidOrder(selectedOrder)
                 }
-                className="bg-yellow-600 hover:bg-yellow-700 py-4 rounded-2xl font-black"
+                className="w-full bg-yellow-600 hover:bg-yellow-700 py-4 rounded-2xl font-black"
               >
                 Confirm Void
-              </button>
-
-              <button
-                onClick={() =>
-                  createAuditLog(
-                    'refund',
-                    selectedOrder,
-                  )
-                }
-                className="bg-red-600 hover:bg-red-700 py-4 rounded-2xl font-black"
-              >
-                Confirm Refund
               </button>
             </div>
 

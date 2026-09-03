@@ -13,7 +13,7 @@ type Order = {
   customerName: string
   tableNumber?: string | null
   status: string
-  paymentStatus: 'paid'
+  paymentStatus: 'paid' | 'refunded'
   paymentMethod?: 'cash' | 'qris'
   total: number
   createdAt: string
@@ -45,14 +45,30 @@ export default function HistoryPage() {
   }
 
   useEffect(() => {
-    fetchHistory()
+    const timer = setTimeout(fetchHistory, 0)
 
     const interval = setInterval(() => {
       fetchHistory()
     }, 3000)
 
-    return () => clearInterval(interval)
+    return () => { clearTimeout(timer); clearInterval(interval) }
   }, [])
+
+  const refundOrder = async (id: string) => {
+    const reason = window.prompt('Masukkan alasan refund:')?.trim()
+    if (!reason) return
+    const response = await fetch(`/api/orders/${id}/refund`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      window.alert(result.message || 'Refund gagal. Hanya owner/admin yang diizinkan.')
+      return
+    }
+    await fetchHistory()
+  }
 
   if (loading) {
     return (
@@ -107,7 +123,7 @@ export default function HistoryPage() {
 
                 <div className="text-right">
                   <p className="text-green-400 font-bold uppercase">
-                    {order.paymentMethod}
+                    {order.paymentStatus === 'refunded' ? 'REFUNDED' : order.paymentMethod}
                   </p>
 
                   <p className="text-orange-400 text-2xl font-bold mt-2">
@@ -144,6 +160,11 @@ export default function HistoryPage() {
                   ),
                 )}
               </div>
+              {order.paymentStatus === 'paid' ? (
+                <button onClick={() => refundOrder(order.id)} className="mt-5 rounded-xl bg-red-700 px-4 py-2 font-bold">
+                  Refund transaksi
+                </button>
+              ) : null}
             </div>
           ))}
         </div>

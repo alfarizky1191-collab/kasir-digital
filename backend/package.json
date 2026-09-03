@@ -18,22 +18,25 @@
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
-    "seed": "npx ts-node prisma/seed.ts"
+    "seed": "npx ts-node prisma/seed.ts",
+    "postinstall": "prisma generate",
+    "vercel-build": "prisma generate && nest build"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
     "@nestjs/core": "^11.0.1",
     "@nestjs/platform-express": "^11.0.1",
-    "@nestjs/platform-socket.io": "^11.1.21",
-    "@nestjs/websockets": "^11.1.21",
     "@prisma/client": "^5.22.0",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "express-rate-limit": "^8.7.0",
+    "helmet": "^8.3.0",
+    "jsonwebtoken": "^9.0.3",
     "prisma": "^5.22.0",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1",
-    "socket.io": "^4.8.3"
+    "rxjs": "^7.8.1"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.2.0",
@@ -43,6 +46,7 @@
     "@nestjs/testing": "^11.0.1",
     "@types/express": "^5.0.0",
     "@types/jest": "^30.0.0",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^24.0.0",
     "@types/supertest": "^7.0.0",
     "eslint": "^9.18.0",
@@ -76,5 +80,8 @@
     ],
     "coverageDirectory": "../coverage",
     "testEnvironment": "node"
+  },
+  "engines": {
+    "node": ">=20"
   }
 }

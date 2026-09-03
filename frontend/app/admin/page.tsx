@@ -40,7 +40,8 @@ export default function AdminPage() {
   }
 
   useEffect(() => {
-    fetchOrders()
+    const timer = setTimeout(fetchOrders, 0)
+    return () => clearTimeout(timer)
   }, [])
 
   const totalRevenue = useMemo(() => {

@@ -17,6 +17,11 @@ model Order {
   paymentAmount  Int?
   changeAmount   Int?
   paidAt         DateTime?
+  voidedAt       DateTime?
+  refundedAt     DateTime?
+  voidReason     String?
+  refundReason   String?
+  paidById       String?
   total          Int
   createdAt      DateTime
 
@@ -29,9 +34,36 @@ model OrderItem {
   name      String
   qty       Int
   price     Int
+  productId String?
 
   orderId   String
   order     Order @relation(fields: [orderId], references: [id], onDelete: Cascade)
+}
+
+model User {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  name         String
+  passwordHash String
+  role         String
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Product {
+  id         String   @id @default(uuid())
+  name       String   @unique
+  price      Int
+  category   String   @default("Menu")
+  imageUrl   String?
+  stock      Int?
+  isActive   Boolean  @default(true)
+  hasLevel   Boolean  @default(false)
+  hasType    Boolean  @default(false)
+  flavors    String[] @default([])
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 }
 model Shift {
   id             String   @id
@@ -62,6 +94,8 @@ model AuditLog {
   orderId     String?
 
   cashierName String
+  userId      String?
+  metadata    Json?
 
   createdAt   DateTime
 }

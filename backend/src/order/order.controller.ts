@@ -1,140 +1,85 @@
-﻿// backend/src/order/order.controller.ts
+import { Body, Controller, Get, Param, Patch, Post } from '@nestjs/common'
 
-import {
-  Body,
-  Controller,
-  Get,
-  NotFoundException,
-  Param,
-  Patch,
-  Post,
-  Delete,
-  HttpException,
-  HttpStatus,
-} from '@nestjs/common';
-
-import { OrderService } from './order.service';
+import { OrderService } from './order.service'
+import { Public } from '../auth/public.decorator'
+import { Roles } from '../auth/roles.decorator'
+import { CurrentUser } from '../auth/current-user.decorator'
+import type { SessionUser } from '../auth/auth.types'
 
 @Controller('api/orders')
 export class OrderController {
-  constructor(
-    private readonly orderService: OrderService,
-  ) {}
+  constructor(private readonly orders: OrderService) {}
 
+  @Roles('owner', 'admin', 'kitchen')
   @Get('kitchen')
-  getKitchenOrders() {
-    return this.orderService.getKitchenOrders();
-  }
+  getKitchenOrders() { return this.orders.getKitchenOrders() }
 
+  @Roles('owner', 'admin', 'cashier')
   @Get('cashier')
-  getCashierOrders() {
-    return this.orderService.getCashierOrders();
-  }
+  getCashierOrders() { return this.orders.getCashierOrders() }
 
+  @Roles('owner', 'admin', 'cashier')
   @Get('history')
-  getHistoryOrders() {
-    return this.orderService.getHistoryOrders();
+  getHistoryOrders() { return this.orders.getHistoryOrders() }
+
+  @Public()
+  @Get(':id/status')
+  async getPublicStatus(@Param('id') id: string) {
+    const order = await this.orders.getById(id)
+    return order ? { id: order.id, status: order.status } : null
   }
 
+  @Roles('owner', 'admin', 'cashier')
+  @Get(':id')
+  getById(@Param('id') id: string) { return this.orders.getById(id) }
+
+  @Public()
   @Post()
-  async createOrder(
-    @Body()
-    body: {
-      customerName: string;
-      tableNumber?: string;
-
-      items: {
-        name: string;
-        qty: number;
-        price: number;
-      }[];
-    },
-  ) {
-    try {
-      return await this.orderService.createOrder(body)
-    } catch (err) {
-      console.error('CREATE ORDER ERROR payload:', body)
-      console.error('CREATE ORDER ERROR stack:', (err as any) && (err as any).stack ? (err as any).stack : err)
-
-      const message = (err as any)?.message || String(err) || 'Create order failed'
-
-      throw new HttpException({ success: false, message }, HttpStatus.INTERNAL_SERVER_ERROR)
-    }
+  createOrder(@Body() body: {
+    customerName?: string
+    tableNumber?: string
+    items: { productId?: string; name?: string; qty: number }[]
+  }) {
+    return this.orders.createOrder(body)
   }
 
+  @Roles('owner', 'admin', 'kitchen')
   @Patch(':id/status')
   updateStatus(
     @Param('id') id: string,
-
-    @Body('status')
-    status:
-      | 'pending'
-      | 'cooking'
-      | 'ready',
+    @Body('status') status: 'cooking' | 'ready',
+    @CurrentUser() user: SessionUser,
   ) {
-    if (
-      ![
-        'pending',
-        'cooking',
-        'ready',
-      ].includes(status)
-    ) {
-      throw new NotFoundException(
-        'Invalid status',
-      );
-    }
-
-    return this.orderService.updateStatus(
-      id,
-      status,
-    );
+    return this.orders.updateStatus(id, status, user)
   }
 
-  @Delete(':id')
-  async deleteOrder(@Param('id') id: string) {
-    try {
-      return await this.orderService.deleteOrder(id)
-    } catch (err) {
-      // If service threw NotFoundException, rethrow to preserve 404
-      if (err instanceof NotFoundException) throw err
-
-      const message = (err as any)?.message || String(err) || 'Delete order failed'
-
-      throw new HttpException({ success: false, message }, HttpStatus.INTERNAL_SERVER_ERROR)
-    }
-  }
-
+  @Roles('owner', 'admin', 'cashier')
   @Patch(':id/payment')
-  async updatePayment(
+  updatePayment(
     @Param('id') id: string,
-
-    @Body('paymentMethod') paymentMethod: 'cash' | 'qris',
-
-    @Body('paymentAmount') paymentAmount?: number,
+    @Body() body: { paymentMethod: 'cash' | 'qris'; paymentAmount?: number },
+    @CurrentUser() user: SessionUser,
   ) {
-    const payload = { id, paymentMethod, paymentAmount }
+    return this.orders.updatePayment(id, body.paymentMethod, body.paymentAmount, user)
+  }
 
-    try {
-      return await this.orderService.updatePayment(
-        id,
-        paymentMethod,
-        paymentAmount,
-      )
-    } catch (err) {
-      // Log request payload and full error/stack for debugging
-      console.error('PAYMENT HANDLER ERROR payload:', payload)
-      console.error('PAYMENT HANDLER ERROR stack:', (err as any) && (err as any).stack ? (err as any).stack : err)
+  @Roles('owner', 'admin', 'cashier')
+  @Post(':id/void')
+  voidOrder(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.orders.voidOrder(id, reason, user)
+  }
 
-      // If service threw NotFoundException, rethrow to preserve 404
-      if (err instanceof NotFoundException) throw err
-
-      // If error is a plain string or object, include it in response
-      const message = (err as any)?.message || String(err) || 'Payment handler failed'
-
-      throw new HttpException(
-        { success: false, message },
-        HttpStatus.INTERNAL_SERVER_ERROR,
-      )
-    }
+  @Roles('owner', 'admin')
+  @Post(':id/refund')
+  refund(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @CurrentUser() user: SessionUser,
+  ) {
+    return this.orders.refund(id, reason, user)
   }
 }

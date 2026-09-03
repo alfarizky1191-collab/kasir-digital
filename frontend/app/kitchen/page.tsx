@@ -1,7 +1,6 @@
 ﻿ 'use client'
 
  import { useEffect, useRef, useState } from 'react'
- import { socket } from '../lib/socket'
  import { Speaker, VolumeX } from 'lucide-react'
 
  type OrderItem = {
@@ -31,20 +30,23 @@
      try {
        const v = localStorage.getItem('kitchen.sound')
        return v === null ? true : v === '1'
-     } catch (err) {
+     } catch {
        return true
      }
    })
 
-   const [tick, setTick] = useState(0)
+   const [now, setNow] = useState(0)
+   const [readyAt, setReadyAt] = useState<Record<string, number>>({})
 
    useEffect(() => {
-     const t = setInterval(() => setTick((s) => s + 1), 1000)
-     return () => clearInterval(t)
+     const updateClock = () => setNow(new Date().getTime())
+     const initialClock = setTimeout(updateClock, 0)
+     const t = setInterval(updateClock, 1000)
+     return () => {
+       clearTimeout(initialClock)
+       clearInterval(t)
+     }
    }, [])
-
-  // client-side map to record when an order became READY (completed timestamp)
-  const readyAtRef = useRef<Record<string, number>>({})
 
    const fetchOrders = async () => {
      try {
@@ -74,10 +76,13 @@
       knownIds.current = incomingIds
 
       // persist a client-side "ready at" timestamp for completed orders
-      data.forEach((o: Order) => {
-        if (o.status === 'ready' && !readyAtRef.current[o.id]) {
-          readyAtRef.current[o.id] = Date.now()
-        }
+      const fetchedAt = new Date().getTime()
+      setReadyAt((current) => {
+        const next = { ...current }
+        data.forEach((o: Order) => {
+          if (o.status === 'ready' && !next[o.id]) next[o.id] = fetchedAt
+        })
+        return next
       })
 
       setOrders(data)
@@ -90,9 +95,8 @@
              audioRef.current.volume = 1
            }
 
-           const play = audioRef.current.play()
-           if (play && typeof (play as any).catch === 'function') (play as any).catch(() => {})
-         } catch (err) {
+           audioRef.current.play().catch(() => {})
+         } catch {
            // ignore
          }
        }
@@ -105,17 +109,13 @@
    }
 
    useEffect(() => {
-     fetchOrders()
+     const initialFetch = setTimeout(fetchOrders, 0)
 
-     // use existing shared socket instance
-     const onOrdersUpdated = () => {
-       fetchOrders()
-     }
-
-     socket.on('ordersUpdated', onOrdersUpdated)
+     const interval = setInterval(fetchOrders, 3000)
 
      return () => {
-       socket.off('ordersUpdated', onOrdersUpdated)
+       clearTimeout(initialFetch)
+       clearInterval(interval)
      }
      // eslint-disable-next-line react-hooks/exhaustive-deps
    }, [])
@@ -123,7 +123,7 @@
    useEffect(() => {
      try {
        localStorage.setItem('kitchen.sound', soundOn ? '1' : '0')
-     } catch (err) {}
+     } catch {}
    }, [soundOn])
 
    const updateStatus = async (id: string, status: 'cooking' | 'ready') => {
@@ -138,36 +138,18 @@
        setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status } : o)))
       // if moved to ready, record ready timestamp client-side
       if (status === 'ready') {
-        readyAtRef.current[id] = Date.now()
+        setReadyAt((current) => ({ ...current, [id]: new Date().getTime() }))
       }
      } catch (err) {
        console.error(err)
      }
    }
 
-  // remove an order after it has been served/cleared
-  const clearOrder = async (id: string) => {
-    try {
-      const res = await fetch(`/api/orders/${id}`, {
-        method: 'DELETE',
-      })
-
-      if (res.ok) {
-        setOrders((prev) => prev.filter((o) => o.id !== id))
-        delete readyAtRef.current[id]
-      } else {
-        console.error('Failed to clear order', await res.text())
-      }
-    } catch (err) {
-      console.error(err)
-    }
-  }
-
    const formatElapsed = (createdAt?: string) => {
      if (!createdAt) return '00:00:00'
      const start = new Date(createdAt).getTime()
      if (!start) return '00:00:00'
-     const diff = Math.max(0, Date.now() - start)
+     const diff = Math.max(0, now - start)
      const sec = Math.floor(diff / 1000)
      const hh = Math.floor(sec / 3600)
      const mm = Math.floor((sec % 3600) / 60)
@@ -176,7 +158,7 @@
    }
 
    const getStatusColor = (status: string, createdAt?: string) => {
-     const moreThan15 = createdAt ? Date.now() - new Date(createdAt).getTime() > 15 * 60 * 1000 : false
+     const moreThan15 = createdAt ? now - new Date(createdAt).getTime() > 15 * 60 * 1000 : false
 
      if (moreThan15) return 'ring-2 ring-red-600'
 
@@ -224,11 +206,11 @@
 
              <div className="text-right">
                  <div className="text-xs text-zinc-400">{order.createdAt ? new Date(order.createdAt).toLocaleTimeString() : ''}</div>
-                <div className={`font-mono text-sm md:text-base ${order.createdAt && Date.now() - new Date(order.createdAt).getTime() > 15 * 60 * 1000 ? 'text-red-400' : 'text-white'}`}>
+                <div className={`font-mono text-sm md:text-base ${order.createdAt && now - new Date(order.createdAt).getTime() > 15 * 60 * 1000 ? 'text-red-400' : 'text-white'}`}>
                   {formatElapsed(order.createdAt)}
                 </div>
-                {order.status === 'ready' && readyAtRef.current[order.id] && (
-                  <div className="text-xs text-green-200 mt-1">Completed: {new Date(readyAtRef.current[order.id]).toLocaleTimeString()}</div>
+                {order.status === 'ready' && readyAt[order.id] && (
+                  <div className="text-xs text-green-200 mt-1">Completed: {new Date(readyAt[order.id]).toLocaleTimeString()}</div>
                 )}
              </div>
            </div>
@@ -267,13 +249,7 @@
 
              {order.status === 'ready' && (
                <div className="flex-1 flex items-center justify-between gap-3">
-                 <div className="flex-1 py-3 rounded-2xl text-center text-sm font-black text-green-900 bg-green-400/10">DONE</div>
-                 <button
-                   onClick={() => clearOrder(order.id)}
-                   className="px-3 py-2 rounded-2xl bg-zinc-800 text-sm text-white hover:bg-zinc-700 active:scale-95"
-                 >
-                   CLEAR
-                 </button>
+                 <div className="flex-1 py-3 rounded-2xl text-center text-sm font-black text-green-200 bg-green-400/10">DONE · WAITING FOR PAYMENT</div>
                </div>
              )}
            </div>

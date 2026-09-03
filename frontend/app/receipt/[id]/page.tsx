@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useParams, useSearchParams } from 'next/navigation'
+import { useParams } from 'next/navigation'
 
 type OrderItem = {
   name: string
@@ -23,8 +23,6 @@ type Order = {
 
 export default function ReceiptPage() {
   const params = useParams()
-  const search = useSearchParams()
-
   const id = params.id
 
   const [order, setOrder] = useState<Order | null>(null)
@@ -32,46 +30,25 @@ export default function ReceiptPage() {
   useEffect(() => {
     const fetchOrder = async () => {
       try {
-        const response = await fetch('/api/orders/history')
+        const response = await fetch(`/api/orders/${id}`)
 
         if (!response.ok) return
 
-        const data = await response.json()
-
-        const found = data.find((o: Order) => o.id === id)
-
-        if (!found) {
-          setOrder(null)
-          return
-        }
-
-        // if paid amount passed via query param, prefer that for printing
-        const paidParam = search?.get('paid')
-
-        if (paidParam && !found.paymentAmount) {
-          const paid = Number(paidParam)
-
-          found.paymentAmount = Number.isFinite(paid) ? paid : undefined
-          if (typeof found.paymentAmount === 'number') {
-            found.changeAmount = found.paymentAmount - found.total
-          }
-        }
-
-        setOrder(found)
+        setOrder(await response.json())
       } catch (err) {
         console.error(err)
       }
     }
 
     fetchOrder()
-  }, [id, search])
+  }, [id])
 
   useEffect(() => {
     if (order) {
       setTimeout(() => {
         try {
           window.print()
-        } catch (err) {
+        } catch {
           // ignore
         }
       }, 500)
