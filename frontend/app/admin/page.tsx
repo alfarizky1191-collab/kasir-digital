@@ -1,319 +1,167 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import Link from 'next/link'
+import { useEffect, useState } from 'react'
 
-type Order = {
-  id: string
-  total: number
-  paymentStatus: string
-  status: string
-  createdAt: string
-  items: {
-    name: string
-    qty: number
-    price: number
-  }[]
+import {
+  apiRequest,
+  formatRupiah,
+} from '@/lib/client-api'
+
+type Summary = {
+  net_revenue: number
+  today_revenue: number
+  transaction_count: number
+  items_sold: number
+  low_stock_count: number
+  top_products: { name: string; quantity: number }[]
 }
 
 export default function AdminPage() {
-  const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(true)
-
-  const fetchOrders = async () => {
-    try {
-      const response = await fetch(
-        '/api/orders/history',
-      )
-
-      const data = await response.json()
-
-      if (Array.isArray(data)) {
-        setOrders(data)
-      } else {
-        setOrders([])
-      }
-    } catch (error) {
-      console.error(error)
-    } finally {
-      setLoading(false)
-    }
-  }
+  const [summary, setSummary] = useState<Summary | null>(null)
+  const [message, setMessage] = useState('Memuat ringkasan...')
 
   useEffect(() => {
-    fetchOrders()
+    let active = true
+    const timer = window.setTimeout(() => {
+      apiRequest<Summary>('/api/admin/summary')
+        .then((data) => {
+          if (active) {
+            setSummary(data)
+            setMessage('')
+          }
+        })
+        .catch((error: Error) => {
+          if (active) setMessage(error.message)
+        })
+    }, 0)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
   }, [])
 
-  const totalRevenue = useMemo(() => {
-    return orders.reduce(
-      (acc, order) => acc + order.total,
-      0,
-    )
-  }, [orders])
+  const cards = summary
+    ? [
+        {
+          label: 'Pendapatan bersih',
+          value: formatRupiah(summary.net_revenue),
+        },
+        {
+          label: 'Pendapatan hari ini',
+          value: formatRupiah(summary.today_revenue),
+        },
+        {
+          label: 'Transaksi',
+          value: String(summary.transaction_count),
+        },
+        {
+          label: 'Item terjual',
+          value: String(summary.items_sold),
+        },
+        {
+          label: 'Stok menipis',
+          value: String(summary.low_stock_count),
+        },
+      ]
+    : []
 
-  const totalTransactions =
-    orders.length
-
-  const totalItemsSold = useMemo(() => {
-    return orders.reduce(
-      (acc, order) => {
-        const qty = order.items.reduce(
-          (sum, item) =>
-            sum + item.qty,
-          0,
-        )
-
-        return acc + qty
-      },
-      0,
-    )
-  }, [orders])
-
-  const menuStats = useMemo(() => {
-    const stats: Record<
-      string,
-      number
-    > = {}
-
-    orders.forEach((order) => {
-      order.items.forEach((item) => {
-        if (!stats[item.name]) {
-          stats[item.name] = 0
-        }
-
-        stats[item.name] += item.qty
-      })
-    })
-
-    return Object.entries(stats)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-  }, [orders])
-
-  const revenueByHour = useMemo(() => {
-    const hours: Record<
-      string,
-      number
-    > = {}
-
-    orders.forEach((order) => {
-      const hour = new Date(
-        order.createdAt,
-      ).getHours()
-
-      const key = `${hour
-        .toString()
-        .padStart(2, '0')}:00`
-
-      if (!hours[key]) {
-        hours[key] = 0
-      }
-
-      hours[key] += order.total
-    })
-
-    return Object.entries(hours).sort()
-  }, [orders])
-
-  const highestRevenue =
-    Math.max(
-      ...revenueByHour.map(
-        ([, value]) => value,
-      ),
-      1,
-    )
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black text-white flex items-center justify-center text-2xl">
-        Loading dashboard...
-      </div>
-    )
-  }
+  const links = [
+    {
+      href: '/admin/products',
+      title: 'Produk & Stok',
+      body: 'Atur harga, ketersediaan, dan jumlah stok.',
+    },
+    {
+      href: '/admin/staff',
+      title: 'Akses Staf',
+      body: 'Setujui akun dan tentukan role.',
+    },
+    {
+      href: '/admin/qr',
+      title: 'Meja & QR',
+      body: 'Atur kode meja dan cetak QR.',
+    },
+    {
+      href: '/admin/settings',
+      title: 'Pengaturan',
+      body: 'Atur nama usaha dan QRIS manual.',
+    },
+    {
+      href: '/audit',
+      title: 'Audit Log',
+      body: 'Lihat perubahan sensitif yang dicatat server.',
+    },
+    {
+      href: '/history',
+      title: 'Riwayat & Refund',
+      body: 'Periksa transaksi dan proses refund.',
+    },
+  ]
 
   return (
-    <div className="min-h-screen bg-black text-white p-4 md:p-8">
-      <div className="mb-10">
-        <h1 className="text-3xl md:text-6xl font-black">
-          Owner Dashboard
-        </h1>
+    <div className="mx-auto min-h-screen max-w-7xl px-4 py-8">
+      <p className="text-sm font-black uppercase tracking-wider text-orange-400">
+        Owner dashboard
+      </p>
+      <h1 className="mt-2 text-5xl font-black">Ringkasan Usaha</h1>
 
-        <p className="text-zinc-400 mt-2 text-sm md:text-lg">
-          Restaurant Analytics
+      {message && (
+        <p className="my-6 rounded-2xl bg-zinc-900 p-4">
+          {message}
         </p>
-      </div>
+      )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5 mb-10">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <p className="text-zinc-400">
-            Total Revenue
-          </p>
-
-          <h2 className="text-3xl md:text-5xl font-black text-orange-400 mt-4">
-            Rp{' '}
-            {totalRevenue.toLocaleString(
-              'id-ID',
-            )}
-          </h2>
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <p className="text-zinc-400">
-            Transactions
-          </p>
-
-          <h2 className="text-3xl md:text-5xl font-black mt-4">
-            {totalTransactions}
-          </h2>
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <p className="text-zinc-400">
-            Items Sold
-          </p>
-
-          <h2 className="text-3xl md:text-5xl font-black mt-4">
-            {totalItemsSold}
-          </h2>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-6">
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <h2 className="text-2xl md:text-3xl font-black mb-6">
-            Top Selling Menu
-          </h2>
-
-          <div className="space-y-4">
-            {menuStats.length === 0 ? (
-              <p className="text-zinc-500">
-                No data yet
-              </p>
-            ) : (
-              menuStats.map(
-                ([name, qty]) => (
-                  <div
-                    key={name}
-                    className="bg-black/40 rounded-2xl px-5 py-4 flex items-center justify-between"
-                  >
-                    <div>
-                      <p className="text-lg md:text-2xl font-bold">
-                        {name}
-                      </p>
-                    </div>
-
-                    <div className="text-orange-400 text-xl md:text-3xl font-black">
-                      {qty}
-                    </div>
-                  </div>
-                ),
-              )
-            )}
-          </div>
-        </div>
-
-        <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-          <h2 className="text-2xl md:text-3xl font-black mb-6">
-            Recent Transactions
-          </h2>
-
-          <div className="space-y-4">
-            {orders.length === 0 ? (
-              <p className="text-zinc-500">
-                No transactions yet
-              </p>
-            ) : (
-              orders
-                .slice(0, 5)
-                .map((order) => (
-                  <div
-                    key={order.id}
-                    className="bg-black/40 rounded-2xl px-5 py-4 flex items-center justify-between"
-                  >
-                    <div>
-                      <p className="text-lg font-bold">
-                        {order.id}
-                      </p>
-
-                      <p className="text-zinc-500 text-sm mt-1">
-                        {new Date(
-                          order.createdAt,
-                        ).toLocaleString(
-                          'id-ID',
-                        )}
-                      </p>
-                    </div>
-
-                    <div className="text-orange-400 text-lg md:text-2xl font-black">
-                      Rp{' '}
-                      {order.total.toLocaleString(
-                        'id-ID',
-                      )}
-                    </div>
-                  </div>
-                ))
-            )}
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-6">
-        <div className="flex items-center justify-between mb-8">
-          <div>
-            <h2 className="text-2xl md:text-3xl font-black">
-              Revenue By Hour
-            </h2>
-
-            <p className="text-zinc-500 mt-2">
-              Live sales overview
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        {cards.map((card) => (
+          <article
+            key={card.label}
+            className="rounded-3xl border border-zinc-800 bg-zinc-950 p-5"
+          >
+            <p className="text-sm text-zinc-500">{card.label}</p>
+            <p className="mt-3 break-words text-2xl font-black text-orange-400">
+              {card.value}
             </p>
+          </article>
+        ))}
+      </div>
+
+      {summary && summary.top_products.length > 0 && (
+        <section className="mt-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+          <h2 className="text-2xl font-black">Produk terlaris</h2>
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            {summary.top_products.map((product, index) => (
+              <div
+                key={product.name}
+                className="rounded-2xl bg-black p-4"
+              >
+                <p className="text-sm text-zinc-500">
+                  #{index + 1}
+                </p>
+                <p className="mt-1 font-black">{product.name}</p>
+                <p className="mt-2 text-orange-400">
+                  {product.quantity} terjual
+                </p>
+              </div>
+            ))}
           </div>
-        </div>
+        </section>
+      )}
 
-        {revenueByHour.length === 0 ? (
-          <p className="text-zinc-500">
-            No chart data yet
-          </p>
-        ) : (
-          <div className="flex items-end gap-3 h-[260px] overflow-x-auto">
-            {revenueByHour.map(
-              ([hour, value]) => {
-                const height =
-                  (value /
-                    highestRevenue) *
-                  100
-
-                return (
-                  <div
-                    key={hour}
-                    className="flex flex-col items-center justify-end min-w-[70px] h-full"
-                  >
-                    <div className="text-xs text-zinc-500 mb-2">
-                      Rp{' '}
-                      {Math.round(
-                        value / 1000,
-                      )}
-                      k
-                    </div>
-
-                    <div
-                      className="w-full rounded-t-2xl bg-orange-500 transition-all duration-500"
-                      style={{
-                        height: `${Math.max(
-                          height,
-                          8,
-                        )}%`,
-                      }}
-                    />
-
-                    <div className="text-sm text-zinc-400 mt-3">
-                      {hour}
-                    </div>
-                  </div>
-                )
-              },
-            )}
-          </div>
-        )}
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {links.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className="rounded-3xl border border-zinc-800 bg-zinc-950 p-6 transition hover:border-orange-500"
+          >
+            <h2 className="text-2xl font-black">{link.title}</h2>
+            <p className="mt-2 leading-6 text-zinc-400">
+              {link.body}
+            </p>
+          </Link>
+        ))}
       </div>
     </div>
   )

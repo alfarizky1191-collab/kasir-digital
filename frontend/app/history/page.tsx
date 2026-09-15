@@ -1,153 +1,193 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
-type OrderItem = {
-  name: string
-  qty: number
-  price: number
+import {
+  apiRequest,
+  formatRupiah,
+} from '@/lib/client-api'
+import type {
+  PosOrder,
+  StaffProfile,
+} from '@/lib/types'
+
+type HistoryResponse = {
+  data: PosOrder[]
+  page: number
+  hasMore: boolean
 }
 
-type Order = {
-  id: string
-  customerName: string
-  tableNumber?: string | null
-  status: string
-  paymentStatus: 'paid'
-  paymentMethod?: 'cash' | 'qris'
-  total: number
-  createdAt: string
-  items: OrderItem[]
+type MeResponse = {
+  staff: StaffProfile | null
 }
 
 export default function HistoryPage() {
-  const [orders, setOrders] = useState<Order[]>([])
-  const [loading, setLoading] = useState(true)
+  const [orders, setOrders] = useState<PosOrder[]>([])
+  const [role, setRole] = useState<StaffProfile['role']>(null)
+  const [message, setMessage] = useState('Memuat riwayat...')
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
+  const refundKeys = useRef<Record<string, string>>({})
+  const [refundingId, setRefundingId] = useState<string | null>(null)
 
-  const fetchHistory = async () => {
+  const load = (targetPage: number) =>
+    apiRequest<HistoryResponse>(
+      `/api/orders/history?page=${targetPage}`,
+    ).then((result) => {
+      setOrders(result.data)
+      setPage(result.page)
+      setHasMore(result.hasMore)
+      setMessage('')
+    })
+
+  useEffect(() => {
+    let active = true
+    const timer = window.setTimeout(() => {
+      Promise.all([
+        apiRequest<HistoryResponse>('/api/orders/history?page=1'),
+        apiRequest<MeResponse>('/api/auth/me'),
+      ])
+        .then(([history, me]) => {
+          if (!active) return
+          setOrders(history.data)
+          setPage(history.page)
+          setHasMore(history.hasMore)
+          setRole(me.staff?.role || null)
+          setMessage('')
+        })
+        .catch((error: Error) => {
+          if (active) setMessage(error.message)
+        })
+    }, 0)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [])
+
+  const refund = async (order: PosOrder) => {
+    const reason = window.prompt(
+      `Alasan refund order #${order.order_number}:`,
+    )
+    if (!reason) return
+    const restock = window.confirm(
+      'Kembalikan item ke stok? Pilih OK jika barang kembali dan masih layak dijual.',
+    )
+
+    const idempotencyKey =
+      refundKeys.current[order.id] || crypto.randomUUID()
+    refundKeys.current[order.id] = idempotencyKey
+    setRefundingId(order.id)
+
     try {
-      const response = await fetch(
-        '/api/orders/history',
-      )
-
-      const data = await response.json()
-
-      if (Array.isArray(data)) {
-        setOrders(data)
-      } else {
-        setOrders([])
-      }
+      await apiRequest(`/api/orders/${order.id}/refund`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason,
+          restock,
+          idempotencyKey,
+        }),
+      })
+      delete refundKeys.current[order.id]
+      await load(page)
     } catch (error) {
-      console.error(error)
+      setMessage(
+        error instanceof Error ? error.message : 'Refund gagal',
+      )
     } finally {
-      setLoading(false)
+      setRefundingId(null)
     }
   }
 
-  useEffect(() => {
-    fetchHistory()
-
-    const interval = setInterval(() => {
-      fetchHistory()
-    }, 3000)
-
-    return () => clearInterval(interval)
-  }, [])
-
-  if (loading) {
-    return (
-      <div className="min-h-screen bg-black text-white p-10">
-        Loading history...
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-black text-white p-10">
-      <h1 className="text-5xl font-bold mb-8">
-        Transaction History
-      </h1>
+    <div className="mx-auto min-h-screen max-w-7xl px-4 py-8">
+      <p className="text-sm font-black uppercase tracking-wider text-orange-400">
+        Transaction history
+      </p>
+      <h1 className="mt-2 text-5xl font-black">Riwayat</h1>
 
-      {orders.length === 0 ? (
-        <p>No paid orders</p>
-      ) : (
-        <div className="space-y-6">
-          {orders.map((order) => (
-            <div
-              key={order.id}
-              className="border border-zinc-700 rounded-2xl p-6"
-            >
-              <div className="flex justify-between mb-5">
-                <div>
-                  <h2 className="text-3xl font-bold">
-                    {order.customerName}
-                  </h2>
-
-                  <p className="text-zinc-400">
-                    {order.id}
-                    {order.tableNumber ? (
-                      <span className="ml-2">• Table {order.tableNumber}</span>
-                    ) : (() => {
-                      const m = /\(Table\s*(\d+)\)/i.exec(order.customerName)
-
-                      if (m) {
-                        return <span className="ml-2">• Table {m[1]}</span>
-                      }
-
-                      return null
-                    })()}
-                  </p>
-
-                  <p className="text-zinc-500 text-sm mt-1">
-                    {new Date(
-                      order.createdAt,
-                    ).toLocaleString('id-ID')}
-                  </p>
-                </div>
-
-                <div className="text-right">
-                  <p className="text-green-400 font-bold uppercase">
-                    {order.paymentMethod}
-                  </p>
-
-                  <p className="text-orange-400 text-2xl font-bold mt-2">
-                    Rp{' '}
-                    {order.total.toLocaleString(
-                      'id-ID',
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                {order.items.map(
-                  (item, index) => (
-                    <div
-                      key={index}
-                      className="flex justify-between"
-                    >
-                      <span>
-                        {item.name} x
-                        {item.qty}
-                      </span>
-
-                      <span>
-                        Rp{' '}
-                        {(
-                          item.qty *
-                          item.price
-                        ).toLocaleString(
-                          'id-ID',
-                        )}
-                      </span>
-                    </div>
-                  ),
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
+      {message && (
+        <p
+          role="status"
+          className="my-6 rounded-2xl bg-zinc-900 p-4 text-zinc-300"
+        >
+          {message}
+        </p>
       )}
+
+      <div className="mt-8 overflow-x-auto rounded-3xl border border-zinc-800">
+        <table className="w-full min-w-[760px] text-left">
+          <thead className="bg-zinc-900 text-sm uppercase text-zinc-400">
+            <tr>
+              <th className="p-4">Order</th>
+              <th className="p-4">Waktu</th>
+              <th className="p-4">Pelanggan</th>
+              <th className="p-4">Status</th>
+              <th className="p-4 text-right">Total</th>
+              <th className="p-4">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((order) => (
+              <tr
+                key={order.id}
+                className="border-t border-zinc-800"
+              >
+                <td className="p-4 font-black">
+                  #{order.order_number}
+                </td>
+                <td className="p-4 text-zinc-400">
+                  {new Date(order.created_at).toLocaleString(
+                    'id-ID',
+                  )}
+                </td>
+                <td className="p-4">{order.customer_name}</td>
+                <td className="p-4">
+                  {order.payment_status}
+                </td>
+                <td className="p-4 text-right font-black">
+                  {formatRupiah(order.total)}
+                </td>
+                <td className="p-4">
+                  {role === 'owner' &&
+                    order.payment_status === 'paid' && (
+                      <button
+                        type="button"
+                        disabled={refundingId === order.id}
+                        onClick={() => refund(order)}
+                        className="rounded-xl bg-red-700 px-3 py-2 text-sm font-bold disabled:opacity-50"
+                      >
+                        {refundingId === order.id
+                          ? 'Memproses...'
+                          : 'Refund'}
+                      </button>
+                    )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="mt-6 flex justify-end gap-3">
+        <button
+          type="button"
+          disabled={page <= 1}
+          onClick={() => load(page - 1)}
+          className="rounded-xl bg-zinc-800 px-4 py-2 font-bold disabled:opacity-40"
+        >
+          Sebelumnya
+        </button>
+        <button
+          type="button"
+          disabled={!hasMore}
+          onClick={() => load(page + 1)}
+          className="rounded-xl bg-zinc-800 px-4 py-2 font-bold disabled:opacity-40"
+        >
+          Berikutnya
+        </button>
+      </div>
     </div>
   )
 }

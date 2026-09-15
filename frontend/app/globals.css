@@ -2,12 +2,51 @@
 @tailwind components;
 @tailwind utilities;
 
-html,
+:root {
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: #09090b;
+}
+
 body {
-  background: #050816;
-  color: white;
   margin: 0;
-  padding: 0;
-  font-family: Arial, Helvetica,
-    sans-serif;
+  background:
+    radial-gradient(circle at top, rgba(249, 115, 22, 0.08), transparent 34rem),
+    #09090b;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 3px solid #fb923c;
+  outline-offset: 2px;
+}
+
+@media print {
+  header,
+  .no-print {
+    display: none !important;
+  }
+
+  body,
+  main {
+    min-height: auto !important;
+    background: white !important;
+    color: black !important;
+  }
 }

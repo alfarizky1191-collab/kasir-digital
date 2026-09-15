@@ -1,46 +1,143 @@
-'use client';
+'use client'
 
-import { QRCodeSVG } from 'qrcode.react';
+import { FormEvent, useEffect, useState } from 'react'
+import { QRCodeSVG } from 'qrcode.react'
 
-export default function QRPage() {
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://kasir-digital.vercel.app';
-  const tables = [
-    'A1',
-    'A2',
-    'A3',
-    'A4',
-    'A5',
-  ];
+import { apiRequest } from '@/lib/client-api'
+import type { DiningTable } from '@/lib/types'
+
+export default function TableQrPage() {
+  const [tables, setTables] = useState<DiningTable[]>([])
+  const [newCode, setNewCode] = useState('')
+  const [message, setMessage] = useState('Memuat meja...')
+  const [baseUrl, setBaseUrl] = useState('')
+
+  const load = () =>
+    apiRequest<DiningTable[]>('/api/tables?scope=admin').then((data) => {
+      setTables(data)
+      setMessage('')
+    })
+
+  useEffect(() => {
+    let active = true
+    const timer = window.setTimeout(() => {
+      setBaseUrl(
+        process.env.NEXT_PUBLIC_APP_URL || window.location.origin,
+      )
+      apiRequest<DiningTable[]>('/api/tables?scope=admin')
+        .then((data) => {
+          if (active) {
+            setTables(data)
+            setMessage('')
+          }
+        })
+        .catch((error: Error) => {
+          if (active) setMessage(error.message)
+        })
+    }, 0)
+
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [])
+
+  const save = async (
+    table: Partial<DiningTable> & { code: string },
+  ) => {
+    try {
+      await apiRequest('/api/tables', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: table.id || null,
+          code: table.code,
+          active: table.active !== false,
+        }),
+      })
+      await load()
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Meja gagal disimpan',
+      )
+    }
+  }
+
+  const add = async (event: FormEvent) => {
+    event.preventDefault()
+    await save({ code: newCode, active: true })
+    setNewCode('')
+  }
 
   return (
-    <div className="min-h-screen bg-[#050816] p-10 text-white">
-      <h1 className="mb-10 text-5xl font-black">
-        Table QR Codes
-      </h1>
+    <div className="mx-auto min-h-screen max-w-7xl px-4 py-8">
+      <div className="no-print flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p className="text-sm font-black uppercase tracking-wider text-orange-400">
+            Table management
+          </p>
+          <h1 className="mt-2 text-5xl font-black">Meja & QR</h1>
+        </div>
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="rounded-xl bg-orange-500 px-5 py-3 font-black text-black"
+        >
+          Cetak QR
+        </button>
+      </div>
 
-      <div className="grid grid-cols-2 gap-8 md:grid-cols-3 xl:grid-cols-4">
-        {tables.map((table) => (
-          <div
-            key={table}
-            className="rounded-3xl bg-white p-6 text-center text-black"
-          >
-            <h2 className="mb-6 text-3xl font-black">
-              {table}
-            </h2>
+      <form
+        onSubmit={add}
+        className="no-print mt-8 flex max-w-md gap-3"
+      >
+        <input
+          required
+          pattern="[A-Za-z0-9-]{1,10}"
+          value={newCode}
+          onChange={(event) =>
+            setNewCode(event.target.value.toUpperCase())
+          }
+          placeholder="Kode meja, contoh A11"
+          className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-black px-4 py-3"
+        />
+        <button className="rounded-xl bg-zinc-800 px-5 font-bold">
+          Tambah
+        </button>
+      </form>
 
-            <div className="flex justify-center">
-              <QRCodeSVG
-                value={`${baseUrl}/menu?table=${table}`}
-                size={220}
-              />
-            </div>
+      {message && (
+        <p className="no-print my-5 text-zinc-300">{message}</p>
+      )}
 
-            <p className="mt-6 text-sm font-semibold">
-              Scan to Order
-            </p>
-          </div>
-        ))}
+      <div className="mt-8 grid grid-cols-2 gap-5 md:grid-cols-3 lg:grid-cols-4">
+        {tables.map((table) => {
+          const url = `${baseUrl}/menu?table=${encodeURIComponent(table.code)}`
+
+          return (
+            <article
+              key={table.id}
+              className="rounded-3xl bg-white p-5 text-center text-black"
+            >
+              <h2 className="text-3xl font-black">
+                Meja {table.code}
+              </h2>
+              <div className="mt-5 flex justify-center">
+                <QRCodeSVG value={url} size={190} />
+              </div>
+              <p className="mt-4 break-all text-xs">{url}</p>
+              <button
+                type="button"
+                onClick={() =>
+                  save({ ...table, active: !table.active })
+                }
+                className="no-print mt-4 rounded-xl bg-black px-4 py-2 text-sm font-bold text-white"
+              >
+                {table.active ? 'Nonaktifkan' : 'Aktifkan'}
+              </button>
+            </article>
+          )
+        })}
       </div>
     </div>
-  );
+  )
 }

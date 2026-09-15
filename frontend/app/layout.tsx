@@ -4,12 +4,18 @@ import type { Metadata } from 'next'
 import type { ReactNode } from 'react'
 
 import Navbar from '@/components/Navbar'
-import ShiftGuard from '@/components/ShiftGuard'
 
 export const metadata: Metadata = {
-  title: 'NOIR POS',
+  title: {
+    default: 'Kasir Digital',
+    template: '%s | Kasir Digital',
+  },
   description:
-    'Modern Restaurant POS System',
+    'Sistem pemesanan, dapur, kasir, stok, dan laporan untuk Aluna Eats.',
+  robots: {
+    index: false,
+    follow: false,
+  },
 }
 
 export default function RootLayout({
@@ -18,15 +24,10 @@ export default function RootLayout({
   children: ReactNode
 }) {
   return (
-    <html lang="en">
+    <html lang="id">
       <body className="min-h-screen bg-black text-white antialiased">
         <Navbar />
-
-        <ShiftGuard />
-
-        <main className="min-h-screen">
-          {children}
-        </main>
+        <main className="min-h-screen">{children}</main>
       </body>
     </html>
   )
