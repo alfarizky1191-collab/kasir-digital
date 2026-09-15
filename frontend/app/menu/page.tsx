@@ -1,292 +1,333 @@
-﻿'use client'
+/* eslint-disable @next/next/no-img-element */
+'use client'
 
-import { Suspense, useMemo, useState } from 'react'
-import { useSearchParams } from 'next/navigation'
+import { useSearchParams, useRouter } from 'next/navigation'
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+} from 'react'
 
-type MenuItem = {
-  id: string
-  name: string
-  price: number
-  img: string
-  best?: boolean
-  level?: boolean
-  tipe?: boolean
+import {
+  apiRequest,
+  formatRupiah,
+} from '@/lib/client-api'
+import type { Product } from '@/lib/types'
+
+type CartLine = {
+  key: string
+  product: Product
+  quantity: number
+  options: Record<string, string>
 }
 
-type CartItem = {
+type CreateOrderResponse = {
   id: string
-  name: string
-  price: number
-  qty: number
-  meta?: Record<string, string>
+  order_number: number
+  public_token: string
+  total: number
 }
-
-const items: Omit<MenuItem, 'id'>[] = [
-  {
-    name: 'Batagor',
-    price: 5000,
-    img: 'https://i.imgur.com/JiFateR.jpeg',
-    best: true,
-    tipe: true,
-  },
-
-  {
-    name: 'Mie Level',
-    price: 8000,
-    level: true,
-    img: 'https://i.imgur.com/u6FXtL7.jpeg',
-    best: true,
-  },
-
-  {
-    name: 'Cilok',
-    price: 5000,
-    img: 'https://i.imgur.com/xvHP2rG.jpeg',
-  },
-
-  {
-    name: 'Es Potong Milo (full)',
-    price: 4000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Es Potong Milo (half)',
-    price: 2000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Es Potong Real good (full)',
-    price: 2000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Es Potong Real good (1/2)',
-    price: 1000,
-    img: 'https://i.imgur.com/3ilf7yY.jpeg',
-  },
-
-  {
-    name: 'Suki Bakar',
-    price: 5000,
-    img: 'https://i.imgur.com/LPkTB2B.jpeg',
-  },
-
-  {
-    name: 'Sosis Bakar',
-    price: 5000,
-    img: 'https://i.imgur.com/ZxwgE0.jpeg',
-  },
-
-  {
-    name: 'Jasuke',
-    price: 5000,
-    img: 'https://i.imgur.com/OGNZogQ.jpeg',
-  },
-]
-
-const menuData: MenuItem[] = items.map((it, idx) => ({ ...it, id: String(idx + 1) }))
-
-const LEVEL_OPTIONS = [
-  { label: 'Level 0', value: '0' },
-  { label: 'Level 1/2', value: '1/2' },
-  { label: 'Level 1', value: '1' },
-  { label: 'Level 2', value: '2' },
-  { label: 'Level 3', value: '3' },
-]
-
-const REAL_GOOD_NAMES = [
-  'Es Potong Real good (full)',
-  'Es Potong Real good (1/2)',
-]
-
-const FLAVORS = ['coklat', 'strawberry', 'blueberry', 'guava', 'blackcurrant']
 
 function MenuContent() {
-  const [cart, setCart] = useState<CartItem[]>([])
-  const [loading, setLoading] = useState(false)
-
   const search = useSearchParams()
-
-  // store per-item selected options
-  const [selectedOptions, setSelectedOptions] = useState<
-    Record<string, { level?: string; tipe?: string; flavor?: string }>
+  const router = useRouter()
+  const tableCode = search.get('table')
+  const [products, setProducts] = useState<Product[]>([])
+  const [cart, setCart] = useState<CartLine[]>([])
+  const [selections, setSelections] = useState<
+    Record<string, Record<string, string>>
   >({})
+  const [customerName, setCustomerName] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [submitting, setSubmitting] = useState(false)
+  const [message, setMessage] = useState('')
 
-  const setOption = (id: string, key: 'level' | 'tipe' | 'flavor', value: string) => {
-    setSelectedOptions((s) => ({ ...s, [id]: { ...(s[id] || {}), [key]: value } }))
-  }
+  useEffect(() => {
+    let active = true
+    const timer = window.setTimeout(() => {
+      apiRequest<Product[]>('/api/products')
+        .then((data) => {
+          if (active) setProducts(data)
+        })
+        .catch((error: Error) => {
+          if (active) setMessage(error.message)
+        })
+        .finally(() => {
+          if (active) setLoading(false)
+        })
+    }, 0)
 
-  const addToCart = (item: MenuItem) => {
-    const opts = selectedOptions[item.id] || {}
+    return () => {
+      active = false
+      window.clearTimeout(timer)
+    }
+  }, [])
 
-    const cartId = `${item.id}-${opts.level ?? 'n'}-${opts.tipe ?? 'n'}-${opts.flavor ?? 'n'}`
+  const total = useMemo(
+    () =>
+      cart.reduce(
+        (sum, line) =>
+          sum + line.product.price * line.quantity,
+        0,
+      ),
+    [cart],
+  )
 
-    setCart((prev) => {
-      const existing = prev.find((c) => c.id === cartId)
-      const displayNameParts = [item.name]
-      if (opts.level) displayNameParts.push(`(${opts.level})`)
-      if (opts.tipe) displayNameParts.push(`[${opts.tipe}]`)
-      if (opts.flavor) displayNameParts.push(`{${opts.flavor}}`)
-      const displayName = displayNameParts.join(' ')
+  const add = (product: Product) => {
+    const selected = selections[product.id] || {}
+    const missing = product.options.find(
+      (option) => !selected[option.name],
+    )
 
+    if (missing) {
+      setMessage(`Pilih ${missing.name} untuk ${product.name}`)
+      return
+    }
+
+    const key = `${product.id}:${JSON.stringify(selected)}`
+    setMessage('')
+    setCart((current) => {
+      const existing = current.find((line) => line.key === key)
       if (existing) {
-        return prev.map((c) => (c.id === cartId ? { ...c, qty: c.qty + 1 } : c))
+        return current.map((line) =>
+          line.key === key
+            ? { ...line, quantity: line.quantity + 1 }
+            : line,
+        )
       }
 
       return [
-        ...prev,
-        { id: cartId, name: displayName, price: item.price, qty: 1, meta: { ...(opts as Record<string, string>) } },
+        ...current,
+        {
+          key,
+          product,
+          quantity: 1,
+          options: selected,
+        },
       ]
     })
   }
 
-  const total = useMemo(() => cart.reduce((acc, item) => acc + item.price * item.qty, 0), [cart])
-  const totalItems = useMemo(() => cart.reduce((acc, item) => acc + item.qty, 0), [cart])
+  const changeQuantity = (key: string, delta: number) => {
+    setCart((current) =>
+      current
+        .map((line) =>
+          line.key === key
+            ? {
+                ...line,
+                quantity: Math.max(0, line.quantity + delta),
+              }
+            : line,
+        )
+        .filter((line) => line.quantity > 0),
+    )
+  }
 
   const checkout = async () => {
-  if (cart.length === 0 || loading) return
+    if (!cart.length || submitting) return
 
-  setLoading(true)
+    setSubmitting(true)
+    setMessage('')
 
-  try {
-    const table = search?.get('table') || undefined
+    try {
+      const result = await apiRequest<CreateOrderResponse>(
+        '/api/orders',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            customerName: customerName.trim() || 'Tamu',
+            tableCode,
+            clientToken: crypto.randomUUID(),
+            items: cart.map((line) => ({
+              productId: line.product.id,
+              quantity: line.quantity,
+              options: line.options,
+            })),
+          }),
+        },
+      )
 
-   const payload = {
-  customerName: table ? `TABLE ${table}` : 'Walk In',
-  tableNumber: table ? Number(table) : null,
-  items: cart.map((item) => ({
-    name: item.name,
-    qty: item.qty,
-    price: item.price,
-  })),
-}
-
-    console.log('CHECKOUT PAYLOAD:', payload)
-
-    const response = await fetch('/api/orders', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    })
-
-    if (!response.ok) {
-      const text = await response.text()
-
-      console.error('CHECKOUT API ERROR:', text)
-
-      throw new Error(text || 'Checkout failed')
+      router.push(
+        `/waiting?id=${encodeURIComponent(result.id)}&token=${encodeURIComponent(result.public_token)}`,
+      )
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : 'Checkout gagal',
+      )
+    } finally {
+      setSubmitting(false)
     }
-
-    const result = await response.json()
-
-    console.log('CHECKOUT SUCCESS:', result)
-
-    setCart([])
-
-    window.alert('Order berhasil dibuat')
-  } catch (error) {
-    console.error('CHECKOUT ERROR:', error)
-
-    window.alert('Checkout gagal')
-  } finally {
-    setLoading(false)
   }
-}
 
   return (
-    <div className="min-h-screen bg-black text-white pb-40">
-      <div className="px-4 md:px-8 py-8 border-b border-zinc-800">
-        <h1 className="text-3xl md:text-6xl font-black">Modern Ordering</h1>
-        <p className="text-zinc-400 mt-2">Premium Restaurant Experience</p>
-      </div>
+    <div className="min-h-screen pb-64">
+      <header className="border-b border-zinc-800 px-5 py-8">
+        <div className="mx-auto max-w-7xl">
+          <p className="text-sm font-black uppercase tracking-widest text-orange-400">
+            {tableCode ? `Meja ${tableCode}` : 'Pesanan langsung'}
+          </p>
+          <h1 className="mt-2 text-4xl font-black sm:text-6xl">
+            Menu Aluna Eats
+          </h1>
+        </div>
+      </header>
 
-      <div className="p-4 md:p-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-6">
-          {menuData.map((item) => (
-            <div key={item.id} className="bg-zinc-900 border border-zinc-800 rounded-3xl overflow-hidden relative">
-              {item.best && (
-                <div className="absolute left-3 top-3 bg-orange-500 text-black px-3 py-1 rounded-full font-black text-xs">BEST</div>
-              )}
+      <section className="mx-auto max-w-7xl px-5 py-8">
+        {message && (
+          <p
+            role="status"
+            className="mb-5 rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-orange-200"
+          >
+            {message}
+          </p>
+        )}
+        {loading ? (
+          <p className="text-zinc-400">Memuat menu...</p>
+        ) : (
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {products.map((product) => {
+              const unavailable =
+                product.sold_out ||
+                (product.track_stock && product.stock <= 0)
 
-              <img src={item.img} alt={item.name} className="w-full h-60 object-cover" />
+              return (
+                <article
+                  key={product.id}
+                  className="overflow-hidden rounded-3xl border border-zinc-800 bg-zinc-950"
+                >
+                  {product.image_url ? (
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      className="h-48 w-full object-cover"
+                    />
+                  ) : (
+                    <div className="h-48 bg-zinc-900" />
+                  )}
+                  <div className="p-5">
+                    <div className="flex items-start justify-between gap-4">
+                      <div>
+                        <h2 className="text-2xl font-black">
+                          {product.name}
+                        </h2>
+                        <p className="mt-1 font-black text-orange-400">
+                          {formatRupiah(product.price)}
+                        </p>
+                      </div>
+                      {product.track_stock && (
+                        <span className="rounded-full bg-zinc-900 px-3 py-1 text-xs text-zinc-400">
+                          Stok {product.stock}
+                        </span>
+                      )}
+                    </div>
 
-              <div className="p-5">
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <h2 className="text-2xl font-black">{item.name}</h2>
-                    <p className="text-orange-400 mt-2 text-lg font-bold">Rp {item.price.toLocaleString('id-ID')}</p>
-                  </div>
+                    {product.options.map((option) => (
+                      <label
+                        key={option.name}
+                        className="mt-4 block"
+                      >
+                        <span className="mb-2 block text-xs font-bold uppercase text-zinc-500">
+                          {option.name}
+                        </span>
+                        <select
+                          value={
+                            selections[product.id]?.[option.name] ||
+                            ''
+                          }
+                          onChange={(event) =>
+                            setSelections((current) => ({
+                              ...current,
+                              [product.id]: {
+                                ...current[product.id],
+                                [option.name]: event.target.value,
+                              },
+                            }))
+                          }
+                          className="w-full rounded-xl border border-zinc-700 bg-black px-3 py-2"
+                        >
+                          <option value="">Pilih</option>
+                          {option.values.map((value) => (
+                            <option key={value} value={value}>
+                              {value}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ))}
 
-                  <div className="flex flex-col items-end gap-2">
-                    <button onClick={() => addToCart(item)} className="bg-orange-500 hover:bg-orange-600 active:scale-95 transition px-5 py-3 rounded-2xl font-black">
-                      Add
+                    <button
+                      type="button"
+                      disabled={unavailable}
+                      onClick={() => add(product)}
+                      className="mt-5 w-full rounded-2xl bg-orange-500 py-3 font-black text-black disabled:bg-zinc-800 disabled:text-zinc-500"
+                    >
+                      {unavailable ? 'Habis' : 'Tambah'}
                     </button>
                   </div>
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  {item.level && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-zinc-400 w-20">Level</label>
-                      <select className="bg-zinc-800 px-3 py-2 rounded-lg" value={selectedOptions[item.id]?.level ?? ''} onChange={(e) => setOption(item.id, 'level', e.target.value)}>
-                        <option value="">Select level</option>
-                        {LEVEL_OPTIONS.map((opt) => (
-                          <option key={opt.value} value={opt.value}>
-                            {opt.label}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-
-                  {item.tipe && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-zinc-400 w-20">Tipe</label>
-                      <select className="bg-zinc-800 px-3 py-2 rounded-lg" value={selectedOptions[item.id]?.tipe ?? ''} onChange={(e) => setOption(item.id, 'tipe', e.target.value)}>
-                        <option value="">Select</option>
-                        <option value="Kuah">Kuah</option>
-                        <option value="Kering">Kering</option>
-                      </select>
-                    </div>
-                  )}
-
-                  {REAL_GOOD_NAMES.includes(item.name) && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-zinc-400 w-20">Rasa</label>
-                      <select className="bg-zinc-800 px-3 py-2 rounded-lg" value={selectedOptions[item.id]?.flavor ?? ''} onChange={(e) => setOption(item.id, 'flavor', e.target.value)}>
-                        <option value="">Pilih rasa</option>
-                        {FLAVORS.map((f) => (
-                          <option key={f} value={f}>
-                            {f}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="fixed bottom-0 left-0 right-0 bg-black/95 backdrop-blur border-t border-zinc-800">
-        <div className="max-w-7xl mx-auto px-4 md:px-8 py-5 flex flex-col md:flex-row items-center justify-between gap-4">
-          <div>
-            <p className="text-zinc-400">Total</p>
-            <h2 className="text-3xl md:text-5xl font-black">Rp {total.toLocaleString('id-ID')}</h2>
+                </article>
+              )
+            })}
           </div>
+        )}
+      </section>
 
-          <div className="text-orange-400 font-black text-xl">{totalItems} Items</div>
-
-          <button disabled={cart.length === 0 || loading} onClick={checkout} className="w-full md:w-auto bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed px-10 py-4 rounded-2xl text-xl font-black">
-            {loading ? 'Processing...' : 'Checkout'}
-          </button>
+      <div className="fixed inset-x-0 bottom-0 border-t border-zinc-800 bg-black/95 p-4 backdrop-blur">
+        <div className="mx-auto max-w-7xl">
+          <input
+            value={customerName}
+            onChange={(event) =>
+              setCustomerName(event.target.value)
+            }
+            maxLength={80}
+            placeholder="Nama pemesan (opsional)"
+            className="mb-3 w-full rounded-xl border border-zinc-700 bg-zinc-950 px-4 py-3"
+          />
+          <div className="max-h-24 space-y-2 overflow-y-auto">
+            {cart.map((line) => (
+              <div
+                key={line.key}
+                className="flex items-center gap-3 text-sm"
+              >
+                <span className="min-w-0 flex-1 truncate">
+                  {line.product.name}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeQuantity(line.key, -1)}
+                  className="h-7 w-7 rounded-full bg-zinc-800"
+                >
+                  −
+                </button>
+                <span className="w-5 text-center font-bold">
+                  {line.quantity}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => changeQuantity(line.key, 1)}
+                  className="h-7 w-7 rounded-full bg-zinc-800"
+                >
+                  +
+                </button>
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-4">
+            <div className="min-w-0 flex-1">
+              <p className="text-xs text-zinc-500">Total</p>
+              <p className="truncate text-2xl font-black text-orange-400">
+                {formatRupiah(total)}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!cart.length || submitting}
+              onClick={checkout}
+              className="rounded-2xl bg-orange-500 px-7 py-4 font-black text-black disabled:opacity-50"
+            >
+              {submitting ? 'Mengirim...' : 'Pesan'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -297,9 +338,7 @@ export default function MenuPage() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-black text-white flex items-center justify-center text-2xl">
-          Loading menu...
-        </div>
+        <div className="p-10 text-zinc-400">Memuat menu...</div>
       }
     >
       <MenuContent />
