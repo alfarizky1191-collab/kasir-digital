@@ -34,7 +34,7 @@ export async function proxy(request: NextRequest) {
   const accessToken = request.cookies.get('pos_access_token')?.value
   const refreshToken = request.cookies.get('pos_refresh_token')?.value
   let usableToken = accessToken
-  let response = NextResponse.next({ request })
+  const response = NextResponse.next({ request })
 
   if (
     (!accessToken || tokenExpiresSoon(accessToken)) &&
