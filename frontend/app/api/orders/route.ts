@@ -1,7 +1,10 @@
+import { createHmac } from 'node:crypto'
+
 import { NextResponse } from 'next/server'
 
 import {
   jsonError,
+  PosApiError,
   rpc,
 } from '@/lib/supabase-rest'
 
@@ -13,8 +16,49 @@ type CreateResult = {
   total: number
 }
 
+function requestFingerprint(request: Request) {
+  const secret = process.env.RATE_LIMIT_SECRET
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new PosApiError(
+      'Rate limit belum dikonfigurasi',
+      503,
+    )
+  }
+
+  const forwarded =
+    request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip') ||
+    'local-development'
+
+  return createHmac(
+    'sha256',
+    secret || 'local-development-only',
+  )
+    .update(forwarded)
+    .digest('hex')
+}
+
 export async function POST(request: Request) {
   try {
+    const allowed = await rpc<boolean>('pos_check_order_rate', {
+      p_key_hash: requestFingerprint(request),
+      p_limit: 10,
+      p_window_seconds: 60,
+    })
+
+    if (!allowed) {
+      return NextResponse.json(
+        {
+          error:
+            'Terlalu banyak pesanan. Tunggu sebentar lalu coba lagi.',
+        },
+        {
+          status: 429,
+          headers: { 'Retry-After': '60' },
+        },
+      )
+    }
+
     const body = (await request.json()) as {
       customerName?: string
       tableCode?: string | null

@@ -6,6 +6,7 @@ import {
   Suspense,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react'
 
@@ -39,6 +40,7 @@ function MenuContent() {
     Record<string, Record<string, string>>
   >({})
   const [customerName, setCustomerName] = useState('')
+  const clientTokenRef = useRef<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
@@ -75,6 +77,7 @@ function MenuContent() {
   )
 
   const add = (product: Product) => {
+    clientTokenRef.current = null
     const selected = selections[product.id] || {}
     const missing = product.options.find(
       (option) => !selected[option.name],
@@ -110,6 +113,7 @@ function MenuContent() {
   }
 
   const changeQuantity = (key: string, delta: number) => {
+    clientTokenRef.current = null
     setCart((current) =>
       current
         .map((line) =>
@@ -131,6 +135,9 @@ function MenuContent() {
     setMessage('')
 
     try {
+      const requestToken =
+        clientTokenRef.current || crypto.randomUUID()
+      clientTokenRef.current = requestToken
       const result = await apiRequest<CreateOrderResponse>(
         '/api/orders',
         {
@@ -138,7 +145,7 @@ function MenuContent() {
           body: JSON.stringify({
             customerName: customerName.trim() || 'Tamu',
             tableCode,
-            clientToken: crypto.randomUUID(),
+            clientToken: requestToken,
             items: cart.map((line) => ({
               productId: line.product.id,
               quantity: line.quantity,
@@ -148,6 +155,7 @@ function MenuContent() {
         },
       )
 
+      clientTokenRef.current = null
       router.push(
         `/waiting?id=${encodeURIComponent(result.id)}&token=${encodeURIComponent(result.public_token)}`,
       )

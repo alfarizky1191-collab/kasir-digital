@@ -42,10 +42,7 @@ function WaitingContent() {
   const [message, setMessage] = useState('Memuat status pesanan...')
 
   useEffect(() => {
-    if (!id || !token) {
-      setMessage('Link status pesanan tidak valid.')
-      return
-    }
+    if (!id || !token) return
 
     let active = true
     const load = () => {
@@ -71,6 +68,14 @@ function WaitingContent() {
       window.clearInterval(interval)
     }
   }, [id, token])
+
+  if (!id || !token) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6 text-center text-zinc-400">
+        Link status pesanan tidak valid.
+      </div>
+    )
+  }
 
   if (!order) {
     return (
