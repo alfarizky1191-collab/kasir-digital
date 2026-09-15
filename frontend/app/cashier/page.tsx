@@ -1,6 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
 
 import {
@@ -20,6 +21,7 @@ type Settings = {
 }
 
 export default function CashierPage() {
+  const router = useRouter()
   const [orders, setOrders] = useState<PosOrder[]>([])
   const [selected, setSelected] = useState<PosOrder | null>(null)
   const [qrisOrder, setQrisOrder] = useState<PosOrder | null>(null)
@@ -39,21 +41,27 @@ export default function CashierPage() {
   useEffect(() => {
     let active = true
     const load = () => {
-      Promise.all([
-        apiRequest<PosOrder[]>('/api/orders/cashier'),
-        apiRequest<Settings | null>('/api/settings'),
-      ]).then(([data, currentSettings]) => {
-        if (active) {
-          setOrders(data)
-          setSettings(currentSettings)
-          setMessage('')
-        }
-      })
+      apiRequest<PosOrder[]>('/api/orders/cashier')
+        .then((data) => {
+          if (active) {
+            setOrders(data)
+            setMessage('')
+          }
+        })
         .catch((error: Error) => {
           if (active) setMessage(error.message)
         })
     }
-    const initial = window.setTimeout(load, 0)
+    const initial = window.setTimeout(() => {
+      load()
+      apiRequest<Settings | null>('/api/settings')
+        .then((currentSettings) => {
+          if (active) setSettings(currentSettings)
+        })
+        .catch((error: Error) => {
+          if (active) setMessage(error.message)
+        })
+    }, 0)
     const polling = window.setInterval(load, 3000)
 
     return () => {
@@ -102,7 +110,7 @@ export default function CashierPage() {
       if (receiptWindow) {
         receiptWindow.location.replace(receiptUrl)
       } else {
-        window.location.assign(receiptUrl)
+        router.push(receiptUrl)
       }
 
       loadOrders().catch((error: Error) => {
@@ -119,11 +127,13 @@ export default function CashierPage() {
   }
 
   const voidOrder = async (order: PosOrder) => {
+    if (pending) return
     const reason = window.prompt(
       `Alasan membatalkan order #${order.order_number}:`,
     )
     if (!reason) return
 
+    setPending(true)
     try {
       await apiRequest(`/api/orders/${order.id}/void`, {
         method: 'POST',
@@ -134,6 +144,8 @@ export default function CashierPage() {
       setMessage(
         error instanceof Error ? error.message : 'Void gagal',
       )
+    } finally {
+      setPending(false)
     }
   }
 
@@ -194,8 +206,9 @@ export default function CashierPage() {
             <div className="grid grid-cols-3 gap-3">
               <button
                 type="button"
+                disabled={pending}
                 onClick={() => setSelected(order)}
-                className="rounded-xl bg-green-600 py-3 font-black"
+                className="rounded-xl bg-green-600 py-3 font-black disabled:opacity-50"
               >
                 Tunai
               </button>
@@ -212,8 +225,9 @@ export default function CashierPage() {
               </button>
               <button
                 type="button"
+                disabled={pending}
                 onClick={() => voidOrder(order)}
-                className="rounded-xl bg-red-700 py-3 font-black"
+                className="rounded-xl bg-red-700 py-3 font-black disabled:opacity-50"
               >
                 Void
               </button>

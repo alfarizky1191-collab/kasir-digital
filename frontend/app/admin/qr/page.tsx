@@ -20,10 +20,10 @@ export default function TableQrPage() {
 
   useEffect(() => {
     let active = true
-    setBaseUrl(
-      process.env.NEXT_PUBLIC_APP_URL || window.location.origin,
-    )
     const timer = window.setTimeout(() => {
+      setBaseUrl(
+        process.env.NEXT_PUBLIC_APP_URL || window.location.origin,
+      )
       apiRequest<DiningTable[]>('/api/tables?scope=admin')
         .then((data) => {
           if (active) {
