@@ -1157,7 +1157,10 @@ create policy "pos_settings_public_read"
 on public.pos_settings for select to anon, authenticated
 using (true);
 
-revoke all on all tables in schema public from anon, authenticated;
+revoke all on public.pos_staff, public.pos_categories, public.pos_products,
+  public.pos_tables, public.pos_shifts, public.pos_orders,
+  public.pos_order_items, public.pos_payments, public.pos_stock_movements,
+  public.pos_audit_logs, public.pos_settings from anon, authenticated;
 
 grant select on public.pos_categories, public.pos_products, public.pos_tables,
   public.pos_settings to anon, authenticated;
