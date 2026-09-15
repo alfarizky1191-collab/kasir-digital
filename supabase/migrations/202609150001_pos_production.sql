@@ -232,11 +232,18 @@ declare
   v_group jsonb;
   v_name text;
   v_selected text;
+  v_selected_count integer;
 begin
   if not public.pos_valid_product_options(p_config)
      or p_selected is null
-     or jsonb_typeof(p_selected) is distinct from 'object'
-     or jsonb_object_length(p_selected) <> jsonb_array_length(p_config) then
+     or jsonb_typeof(p_selected) is distinct from 'object' then
+    return false;
+  end if;
+
+  select count(*)::integer into v_selected_count
+  from jsonb_object_keys(p_selected);
+
+  if v_selected_count <> jsonb_array_length(p_config) then
     return false;
   end if;
 
