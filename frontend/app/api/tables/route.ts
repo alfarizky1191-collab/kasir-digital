@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 import {
   jsonError,
@@ -9,14 +9,20 @@ import {
 } from '@/lib/supabase-rest'
 import type { DiningTable } from '@/lib/types'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const token =
+      request.nextUrl.searchParams.get('scope') === 'admin'
+        ? (await requireRole(['owner'])).token
+        : null
     const params = new URLSearchParams({
       select: 'id,code,active',
       order: 'code.asc',
     })
     const response = await supabaseFetch(
       `rest/v1/pos_tables?${params.toString()}`,
+      {},
+      token,
     )
 
     return NextResponse.json(

@@ -13,7 +13,7 @@ After migration:
 - add the production URL to allowed redirect URLs;
 - configure database backups appropriate for real sales data.
 
-The application uses only a publishable key. Do not add a service-role key.
+Customer order creation and public-token status lookup use a server-only Supabase secret key so callers cannot bypass the Next.js rate limit. Use a current `sb_secret_...` key, never a browser-exposed key or a legacy key when a current secret key is available. This key bypasses RLS across the shared project, so keep it only in Vercel's encrypted environment settings and rotate it immediately if exposed.
 
 ## 2. Vercel
 
@@ -23,6 +23,7 @@ Configure:
 
 - `SUPABASE_URL`
 - `SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SECRET_KEY` — server-only; never prefix with `NEXT_PUBLIC_`
 - `RATE_LIMIT_SECRET` — at least 32 random bytes
 - `NEXT_PUBLIC_APP_URL` — final HTTPS origin without a trailing slash
 
@@ -46,6 +47,6 @@ Only the first POS account can self-claim owner. Later accounts require owner ap
 - Move it from pending to cooking to ready.
 - Pay it in cash and verify the printed receipt.
 - Place and void another order; verify stock is restored.
-- Refund a paid test order as owner.
+- Open a current shift, then refund a paid test order as owner.
 - Close the shift and verify expected cash and difference.
 - Verify the audit page includes every sensitive action.

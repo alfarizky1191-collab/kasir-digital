@@ -162,6 +162,105 @@ create table public.pos_settings (
 
 insert into public.pos_settings (id) values (true);
 
+create or replace function public.pos_valid_product_options(p_options jsonb)
+returns boolean
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  v_group jsonb;
+  v_value jsonb;
+  v_name text;
+  v_text text;
+  v_names text[] := array[]::text[];
+  v_values text[];
+begin
+  if p_options is null
+     or jsonb_typeof(p_options) is distinct from 'array'
+     or jsonb_array_length(p_options) > 10 then
+    return false;
+  end if;
+
+  for v_group in select value from jsonb_array_elements(p_options)
+  loop
+    if jsonb_typeof(v_group) is distinct from 'object'
+       or jsonb_typeof(v_group->'name') is distinct from 'string'
+       or jsonb_typeof(v_group->'values') is distinct from 'array' then
+      return false;
+    end if;
+
+    v_name := btrim(v_group->>'name');
+    if char_length(v_name) not between 1 and 40
+       or v_name <> v_group->>'name'
+       or v_name = any(v_names)
+       or jsonb_array_length(v_group->'values') not between 1 and 20 then
+      return false;
+    end if;
+    v_names := array_append(v_names, v_name);
+    v_values := array[]::text[];
+
+    for v_value in select value from jsonb_array_elements(v_group->'values')
+    loop
+      if jsonb_typeof(v_value) is distinct from 'string' then
+        return false;
+      end if;
+      v_text := btrim(v_value #>> '{}');
+      if char_length(v_text) not between 1 and 80
+         or v_text <> (v_value #>> '{}')
+         or v_text = any(v_values) then
+        return false;
+      end if;
+      v_values := array_append(v_values, v_text);
+    end loop;
+  end loop;
+
+  return true;
+end
+$$;
+
+create or replace function public.pos_options_match(
+  p_config jsonb,
+  p_selected jsonb
+)
+returns boolean
+language plpgsql
+immutable
+set search_path = ''
+as $$
+declare
+  v_group jsonb;
+  v_name text;
+  v_selected text;
+begin
+  if not public.pos_valid_product_options(p_config)
+     or p_selected is null
+     or jsonb_typeof(p_selected) is distinct from 'object'
+     or jsonb_object_length(p_selected) <> jsonb_array_length(p_config) then
+    return false;
+  end if;
+
+  for v_group in select value from jsonb_array_elements(p_config)
+  loop
+    v_name := v_group->>'name';
+    if jsonb_typeof(p_selected->v_name) is distinct from 'string' then
+      return false;
+    end if;
+
+    v_selected := p_selected->>v_name;
+    if not exists (
+      select 1
+      from jsonb_array_elements_text(v_group->'values') as allowed(value)
+      where allowed.value = v_selected
+    ) then
+      return false;
+    end if;
+  end loop;
+
+  return true;
+end
+$$;
+
 create or replace function public.pos_current_role()
 returns text
 language sql
@@ -246,7 +345,7 @@ begin
     raise exception 'Nama harus 2-80 karakter' using errcode = '22023';
   end if;
 
-  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('pos_first_owner'));
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('pos_owner_roster'));
 
   if exists (
     select 1 from public.pos_staff
@@ -288,15 +387,42 @@ set search_path = ''
 as $$
 declare
   v_actor uuid := (select auth.uid());
+  v_target public.pos_staff;
 begin
   if not public.pos_has_role(array['owner']) then
     raise exception 'Owner access required' using errcode = '42501';
   end if;
-  if p_role not in ('owner', 'cashier', 'kitchen') then
-    raise exception 'Invalid role' using errcode = '22023';
+  if p_user_id is null
+     or p_active is null
+     or p_role is null
+     or p_role not in ('owner', 'cashier', 'kitchen') then
+    raise exception 'Invalid staff access request' using errcode = '22023';
   end if;
-  if p_user_id = v_actor and p_active = false then
-    raise exception 'Owner tidak dapat menonaktifkan akun sendiri' using errcode = '22023';
+
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext('pos_owner_roster'));
+
+  select * into v_target
+  from public.pos_staff
+  where user_id = p_user_id
+  for update;
+
+  if not found then
+    raise exception 'Staff request not found' using errcode = 'P0002';
+  end if;
+  if p_user_id = v_actor
+     and (p_active is distinct from true or p_role <> 'owner') then
+    raise exception 'Owner tidak dapat menurunkan akses akun sendiri' using errcode = '22023';
+  end if;
+  if v_target.active
+     and v_target.role = 'owner'
+     and (p_active is distinct from true or p_role <> 'owner')
+     and not exists (
+       select 1 from public.pos_staff
+       where role = 'owner'
+         and active = true
+         and user_id <> p_user_id
+     ) then
+    raise exception 'Minimal satu owner aktif harus dipertahankan' using errcode = '23505';
   end if;
 
   update public.pos_staff
@@ -305,10 +431,6 @@ begin
       approved_at = case when p_active then now() else approved_at end,
       approved_by = v_actor
   where user_id = p_user_id;
-
-  if not found then
-    raise exception 'Staff request not found' using errcode = 'P0002';
-  end if;
 
   insert into public.pos_audit_logs (
     actor_id, action, entity_type, entity_id, metadata
@@ -390,13 +512,20 @@ declare
   v_product_id uuid;
   v_qty integer;
   v_options jsonb;
-  v_total integer := 0;
+  v_total bigint := 0;
   v_name text := left(btrim(coalesce(p_customer_name, 'Tamu')), 80);
   v_table text := nullif(upper(btrim(coalesce(p_table_code, ''))), '');
 begin
   if p_client_token is null then
     raise exception 'Client token required' using errcode = '22023';
   end if;
+
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended(
+      'pos_order:' || p_client_token::text,
+      0
+    )
+  );
 
   select * into v_existing
   from public.pos_orders
@@ -422,7 +551,8 @@ begin
   select * into v_shift
   from public.pos_shifts
   where status = 'open'
-  limit 1;
+  limit 1
+  for update;
 
   if not found then
     raise exception 'Kasir belum membuka shift' using errcode = 'P0001';
@@ -467,6 +597,9 @@ begin
     if not found or v_product.sold_out then
       raise exception 'Produk tidak tersedia' using errcode = 'P0001';
     end if;
+    if not public.pos_options_match(v_product.options, v_options) then
+      raise exception 'Pilihan produk tidak valid' using errcode = '22023';
+    end if;
     if v_product.track_stock and v_product.stock < v_qty then
       raise exception 'Stok % tidak cukup', v_product.name using errcode = 'P0001';
     end if;
@@ -479,7 +612,10 @@ begin
       v_qty, v_product.price
     );
 
-    v_total := v_total + (v_product.price * v_qty);
+    v_total := v_total + (v_product.price::bigint * v_qty);
+    if v_total > 2147483647 then
+      raise exception 'Nilai order melebihi batas' using errcode = '22003';
+    end if;
 
     if v_product.track_stock then
       update public.pos_products
@@ -497,7 +633,7 @@ begin
   end loop;
 
   update public.pos_orders
-  set total = v_total, updated_at = now()
+  set total = v_total::integer, updated_at = now()
   where id = v_order.id
   returning * into v_order;
 
@@ -631,6 +767,10 @@ begin
   where idempotency_key = p_idempotency_key;
 
   if found then
+    if v_payment.kind <> 'sale'
+       or v_payment.order_id <> p_order_id then
+      raise exception 'Idempotency key digunakan untuk transaksi lain' using errcode = '23505';
+    end if;
     return jsonb_build_object(
       'success', true,
       'payment_id', v_payment.id,
@@ -648,6 +788,25 @@ begin
   if not found then
     raise exception 'Order not found' using errcode = 'P0002';
   end if;
+
+  select * into v_payment
+  from public.pos_payments
+  where idempotency_key = p_idempotency_key;
+
+  if found then
+    if v_payment.kind <> 'sale'
+       or v_payment.order_id <> p_order_id then
+      raise exception 'Idempotency key digunakan untuk transaksi lain' using errcode = '23505';
+    end if;
+    return jsonb_build_object(
+      'success', true,
+      'payment_id', v_payment.id,
+      'order_id', v_payment.order_id,
+      'amount', v_payment.amount,
+      'change_amount', v_payment.change_amount
+    );
+  end if;
+
   if v_order.status <> 'ready' or v_order.payment_status <> 'unpaid' then
     raise exception 'Order tidak siap atau sudah dibayar' using errcode = '23505';
   end if;
@@ -794,6 +953,7 @@ declare
   v_order public.pos_orders;
   v_sale public.pos_payments;
   v_refund public.pos_payments;
+  v_shift public.pos_shifts;
   v_item record;
   v_reason text := btrim(coalesce(p_reason, ''));
 begin
@@ -809,6 +969,10 @@ begin
   from public.pos_payments
   where idempotency_key = p_idempotency_key;
   if found then
+    if v_refund.kind <> 'refund'
+       or v_refund.order_id <> p_order_id then
+      raise exception 'Idempotency key digunakan untuk transaksi lain' using errcode = '23505';
+    end if;
     return jsonb_build_object('success', true, 'payment_id', v_refund.id);
   end if;
 
@@ -817,7 +981,23 @@ begin
   where id = p_order_id
   for update;
 
-  if not found or v_order.payment_status <> 'paid' then
+  if not found then
+    raise exception 'Order not found' using errcode = 'P0002';
+  end if;
+
+  select * into v_refund
+  from public.pos_payments
+  where idempotency_key = p_idempotency_key;
+
+  if found then
+    if v_refund.kind <> 'refund'
+       or v_refund.order_id <> p_order_id then
+      raise exception 'Idempotency key digunakan untuk transaksi lain' using errcode = '23505';
+    end if;
+    return jsonb_build_object('success', true, 'payment_id', v_refund.id);
+  end if;
+
+  if v_order.payment_status <> 'paid' then
     raise exception 'Order tidak dapat di-refund' using errcode = '23505';
   end if;
 
@@ -825,11 +1005,25 @@ begin
   from public.pos_payments
   where order_id = p_order_id and kind = 'sale';
 
+  if not found then
+    raise exception 'Pembayaran awal tidak ditemukan' using errcode = 'P0002';
+  end if;
+
+  select * into v_shift
+  from public.pos_shifts
+  where status = 'open'
+  limit 1
+  for update;
+
+  if not found then
+    raise exception 'Buka shift sebelum memproses refund' using errcode = 'P0001';
+  end if;
+
   insert into public.pos_payments (
     order_id, shift_id, kind, method, amount,
     tendered, change_amount, idempotency_key, processed_by
   ) values (
-    v_order.id, v_sale.shift_id, 'refund', v_sale.method, v_order.total,
+    v_order.id, v_shift.id, 'refund', v_sale.method, v_order.total,
     v_order.total, 0, p_idempotency_key, v_actor
   ) returning * into v_refund;
 
@@ -983,14 +1177,19 @@ declare
   v_old_stock integer := 0;
   v_delta integer := 0;
   v_name text := btrim(coalesce(p_name, ''));
+  v_image text := nullif(btrim(coalesce(p_image_url, '')), '');
 begin
   if not public.pos_has_role(array['owner']) then
     raise exception 'Owner access required' using errcode = '42501';
   end if;
   if char_length(v_name) not between 1 and 120
-     or p_price is null or p_price < 0
-     or p_stock is null or p_stock < 0
-     or jsonb_typeof(coalesce(p_options, '[]'::jsonb)) <> 'array' then
+     or p_price is null or p_price not between 0 and 20000000
+     or p_stock is null or p_stock not between 0 and 1000000
+     or not public.pos_valid_product_options(coalesce(p_options, '[]'::jsonb))
+     or (
+       v_image is not null
+       and (char_length(v_image) > 2048 or v_image !~ '^https://')
+     ) then
     raise exception 'Invalid product data' using errcode = '22023';
   end if;
 
@@ -1001,7 +1200,7 @@ begin
     ) values (
       p_category_id, v_name, p_price, p_stock, coalesce(p_track_stock, true),
       coalesce(p_sold_out, false), coalesce(p_active, true),
-      nullif(btrim(coalesce(p_image_url, '')), ''),
+      v_image,
       coalesce(p_options, '[]'::jsonb)
     ) returning * into v_product;
     v_delta := p_stock;
@@ -1023,7 +1222,7 @@ begin
         track_stock = coalesce(p_track_stock, true),
         sold_out = coalesce(p_sold_out, false),
         active = coalesce(p_active, true),
-        image_url = nullif(btrim(coalesce(p_image_url, '')), ''),
+        image_url = v_image,
         options = coalesce(p_options, '[]'::jsonb),
         updated_at = now()
     where id = p_id
@@ -1114,44 +1313,66 @@ create policy "pos_staff_self_or_owner_read"
 on public.pos_staff for select to authenticated
 using (
   user_id = (select auth.uid())
-  or public.pos_has_role(array['owner'])
+  or (select public.pos_has_role(array['owner']))
 );
 
 create policy "pos_categories_public_active_read"
 on public.pos_categories for select to anon, authenticated
-using (active = true or public.pos_has_role(array['owner']));
+using (
+  active = true
+  or (select public.pos_has_role(array['owner']))
+);
 
 create policy "pos_products_public_active_read"
 on public.pos_products for select to anon, authenticated
-using (active = true or public.pos_has_role(array['owner', 'cashier', 'kitchen']));
+using (
+  (
+    active = true
+    and (
+      category_id is null
+      or exists (
+        select 1
+        from public.pos_categories category
+        where category.id = pos_products.category_id
+          and category.active = true
+      )
+    )
+  )
+  or (
+    select public.pos_has_role(array['owner', 'cashier', 'kitchen'])
+  )
+);
 
 create policy "pos_tables_public_active_read"
 on public.pos_tables for select to anon, authenticated
-using (active = true or public.pos_has_role(array['owner']));
+using (
+  active = true
+  or (select public.pos_has_role(array['owner']))
+);
 
 create policy "pos_shifts_staff_read"
 on public.pos_shifts for select to authenticated
-using (public.pos_has_role(array['owner', 'cashier', 'kitchen']));
+using ((select public.pos_has_role(array['owner', 'cashier', 'kitchen'])));
 
 create policy "pos_orders_staff_read"
 on public.pos_orders for select to authenticated
-using (public.pos_has_role(array['owner', 'cashier', 'kitchen']));
+using ((select public.pos_has_role(array['owner', 'cashier', 'kitchen'])));
 
 create policy "pos_order_items_staff_read"
 on public.pos_order_items for select to authenticated
-using (public.pos_has_role(array['owner', 'cashier', 'kitchen']));
+using ((select public.pos_has_role(array['owner', 'cashier', 'kitchen'])));
 
 create policy "pos_payments_finance_read"
 on public.pos_payments for select to authenticated
-using (public.pos_has_role(array['owner', 'cashier']));
+using ((select public.pos_has_role(array['owner', 'cashier'])));
 
 create policy "pos_stock_owner_read"
 on public.pos_stock_movements for select to authenticated
-using (public.pos_has_role(array['owner']));
+using ((select public.pos_has_role(array['owner'])));
 
 create policy "pos_audit_owner_read"
 on public.pos_audit_logs for select to authenticated
-using (public.pos_has_role(array['owner']));
+using ((select public.pos_has_role(array['owner'])));
 
 create policy "pos_settings_public_read"
 on public.pos_settings for select to anon, authenticated
@@ -1168,6 +1389,8 @@ grant select on public.pos_staff, public.pos_shifts, public.pos_orders,
   public.pos_order_items, public.pos_payments, public.pos_stock_movements,
   public.pos_audit_logs to authenticated;
 
+revoke all on function public.pos_valid_product_options(jsonb) from public;
+revoke all on function public.pos_options_match(jsonb, jsonb) from public;
 revoke all on function public.pos_current_role() from public;
 revoke all on function public.pos_has_role(text[]) from public;
 revoke all on function public.pos_bootstrap_status() from public;
@@ -1187,13 +1410,14 @@ revoke all on function public.pos_upsert_product(
 ) from public;
 revoke all on function public.pos_upsert_table(uuid, text, boolean) from public;
 
+grant execute on function public.pos_has_role(text[]) to anon, authenticated;
 grant execute on function public.pos_bootstrap_status() to authenticated;
 grant execute on function public.pos_request_access(text) to authenticated;
 grant execute on function public.pos_claim_first_owner(text) to authenticated;
 grant execute on function public.pos_set_staff_access(uuid, text, boolean) to authenticated;
 grant execute on function public.pos_open_shift(integer) to authenticated;
-grant execute on function public.pos_create_order(text, text, jsonb, uuid) to anon, authenticated;
-grant execute on function public.pos_get_order_status(uuid, uuid) to anon, authenticated;
+grant execute on function public.pos_create_order(text, text, jsonb, uuid) to service_role;
+grant execute on function public.pos_get_order_status(uuid, uuid) to service_role;
 grant execute on function public.pos_update_order_status(uuid, text) to authenticated;
 grant execute on function public.pos_pay_order(uuid, text, integer, uuid) to authenticated;
 grant execute on function public.pos_void_order(uuid, text) to authenticated;

@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 import {
   jsonError,
@@ -9,8 +9,12 @@ import {
 } from '@/lib/supabase-rest'
 import type { Product } from '@/lib/types'
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const token =
+      request.nextUrl.searchParams.get('scope') === 'admin'
+        ? (await requireRole(['owner'])).token
+        : null
     const params = new URLSearchParams({
       select:
         'id,category_id,name,price,stock,track_stock,sold_out,active,image_url,options',
@@ -18,6 +22,8 @@ export async function GET() {
     })
     const response = await supabaseFetch(
       `rest/v1/pos_products?${params.toString()}`,
+      {},
+      token,
     )
     const products = await readJson<Product[]>(response)
 

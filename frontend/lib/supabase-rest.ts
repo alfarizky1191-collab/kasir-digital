@@ -45,6 +45,20 @@ export function supabaseConfig() {
   }
 }
 
+export function supabaseSecretConfig() {
+  const { url } = supabaseConfig()
+  const key = process.env.SUPABASE_SECRET_KEY
+
+  if (!key) {
+    throw new PosApiError(
+      'Supabase server key belum dikonfigurasi',
+      503,
+    )
+  }
+
+  return { url, key }
+}
+
 export async function supabaseFetch(
   path: string,
   init: RequestInit = {},
@@ -54,7 +68,31 @@ export async function supabaseFetch(
   const headers = new Headers(init.headers)
 
   headers.set('apikey', key)
-  headers.set('Authorization', `Bearer ${accessToken || key}`)
+  if (accessToken) {
+    headers.set('Authorization', `Bearer ${accessToken}`)
+  } else {
+    headers.delete('Authorization')
+  }
+  if (init.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+  }
+
+  return fetch(`${url}/${path.replace(/^\//, '')}`, {
+    ...init,
+    headers,
+    cache: 'no-store',
+  })
+}
+
+export async function supabaseSecretFetch(
+  path: string,
+  init: RequestInit = {},
+) {
+  const { url, key } = supabaseSecretConfig()
+  const headers = new Headers(init.headers)
+
+  headers.set('apikey', key)
+  headers.delete('Authorization')
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json')
   }
@@ -100,6 +138,22 @@ export async function rpc<T>(
       body: JSON.stringify(body),
     },
     accessToken,
+  )
+
+  return readJson<T>(response)
+}
+
+export async function privilegedRpc<T>(
+  name: string,
+  body: JsonRecord,
+) {
+  const response = await supabaseSecretFetch(
+    `rest/v1/rpc/${name}`,
+    {
+      method: 'POST',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify(body),
+    },
   )
 
   return readJson<T>(response)

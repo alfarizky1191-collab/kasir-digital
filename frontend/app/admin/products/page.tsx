@@ -44,14 +44,16 @@ const EMPTY_FORM: ProductForm = {
 export default function ProductsPage() {
   const [products, setProducts] = useState<Product[]>([])
   const [categories, setCategories] = useState<Category[]>([])
+  const [categoryName, setCategoryName] = useState('')
+  const [categoryPending, setCategoryPending] = useState(false)
   const [form, setForm] = useState<ProductForm>(EMPTY_FORM)
   const [message, setMessage] = useState('Memuat produk...')
   const [pending, setPending] = useState(false)
 
   const load = () =>
     Promise.all([
-      apiRequest<Product[]>('/api/products'),
-      apiRequest<Category[]>('/api/categories'),
+      apiRequest<Product[]>('/api/products?scope=admin'),
+      apiRequest<Category[]>('/api/categories?scope=admin'),
     ]).then(([productData, categoryData]) => {
       setProducts(productData)
       setCategories(categoryData)
@@ -62,8 +64,8 @@ export default function ProductsPage() {
     let active = true
     const timer = window.setTimeout(() => {
       Promise.all([
-        apiRequest<Product[]>('/api/products'),
-        apiRequest<Category[]>('/api/categories'),
+        apiRequest<Product[]>('/api/products?scope=admin'),
+        apiRequest<Category[]>('/api/categories?scope=admin'),
       ])
         .then(([productData, categoryData]) => {
           if (!active) return
@@ -81,6 +83,56 @@ export default function ProductsPage() {
       window.clearTimeout(timer)
     }
   }, [])
+
+  const saveCategory = async (
+    category: Category | null,
+    name: string,
+    active: boolean,
+  ) => {
+    setCategoryPending(true)
+    setMessage('')
+
+    try {
+      await apiRequest<Category>('/api/categories', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: category?.id || null,
+          name: name.trim(),
+          sortOrder:
+            category?.sort_order ??
+            (categories.at(-1)?.sort_order || 0) + 10,
+          active,
+        }),
+      })
+      await load()
+      return true
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Kategori gagal disimpan',
+      )
+      return false
+    } finally {
+      setCategoryPending(false)
+    }
+  }
+
+  const addCategory = async (event: FormEvent) => {
+    event.preventDefault()
+    if (
+      await saveCategory(null, categoryName, true)
+    ) {
+      setCategoryName('')
+      setMessage('Kategori tersimpan.')
+    }
+  }
+
+  const renameCategory = async (category: Category) => {
+    const name = window.prompt('Nama kategori:', category.name)
+    if (!name || name.trim() === category.name) return
+    await saveCategory(category, name, category.active)
+  }
 
   const edit = (product: Product) => {
     setForm({
@@ -116,7 +168,12 @@ export default function ProductsPage() {
           trackStock: form.trackStock,
           soldOut: form.soldOut,
           active: form.active,
-          options: form.options,
+          options: form.options.map((option) => ({
+            name: option.name.trim(),
+            values: option.values
+              .map((value) => value.trim())
+              .filter(Boolean),
+          })),
         }),
       })
       setForm(EMPTY_FORM)
@@ -138,9 +195,74 @@ export default function ProductsPage() {
       </p>
       <h1 className="mt-2 text-5xl font-black">Produk & Stok</h1>
 
+      <section className="mt-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-6">
+        <h2 className="text-2xl font-black">Kategori</h2>
+        <form
+          onSubmit={addCategory}
+          className="mt-4 flex max-w-xl gap-3"
+        >
+          <input
+            required
+            maxLength={80}
+            value={categoryName}
+            onChange={(event) =>
+              setCategoryName(event.target.value)
+            }
+            placeholder="Kategori baru"
+            className="min-w-0 flex-1 rounded-xl border border-zinc-700 bg-black px-3 py-3"
+          />
+          <button
+            disabled={categoryPending}
+            className="rounded-xl bg-zinc-800 px-5 font-bold disabled:opacity-50"
+          >
+            Tambah
+          </button>
+        </form>
+        <div className="mt-4 flex flex-wrap gap-3">
+          {categories.map((category) => (
+            <div
+              key={category.id}
+              className="flex items-center gap-2 rounded-xl border border-zinc-800 px-3 py-2"
+            >
+              <span
+                className={
+                  category.active
+                    ? 'font-bold'
+                    : 'font-bold text-zinc-500 line-through'
+                }
+              >
+                {category.name}
+              </span>
+              <button
+                type="button"
+                disabled={categoryPending}
+                onClick={() => renameCategory(category)}
+                className="text-xs text-orange-400 disabled:opacity-50"
+              >
+                Ubah
+              </button>
+              <button
+                type="button"
+                disabled={categoryPending}
+                onClick={() =>
+                  saveCategory(
+                    category,
+                    category.name,
+                    !category.active,
+                  )
+                }
+                className="text-xs text-zinc-400 disabled:opacity-50"
+              >
+                {category.active ? 'Nonaktifkan' : 'Aktifkan'}
+              </button>
+            </div>
+          ))}
+        </div>
+      </section>
+
       <form
         onSubmit={save}
-        className="mt-8 rounded-3xl border border-zinc-800 bg-zinc-950 p-6"
+        className="mt-6 rounded-3xl border border-zinc-800 bg-zinc-950 p-6"
       >
         <h2 className="text-2xl font-black">
           {form.id ? 'Edit produk' : 'Produk baru'}
@@ -245,6 +367,94 @@ export default function ProductsPage() {
             </label>
           ))}
         </div>
+        <div className="mt-6 rounded-2xl border border-zinc-800 p-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h3 className="font-black">Pilihan produk</h3>
+              <p className="mt-1 text-xs text-zinc-500">
+                Contoh: Level — 0, 1, 2, 3
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={form.options.length >= 10}
+              onClick={() =>
+                setForm({
+                  ...form,
+                  options: [
+                    ...form.options,
+                    { name: '', values: [''] },
+                  ],
+                })
+              }
+              className="rounded-xl bg-zinc-800 px-4 py-2 text-sm font-bold disabled:opacity-40"
+            >
+              Tambah pilihan
+            </button>
+          </div>
+          <div className="mt-4 space-y-3">
+            {form.options.map((option, index) => (
+              <div
+                key={index}
+                className="grid gap-3 sm:grid-cols-[1fr_2fr_auto]"
+              >
+                <input
+                  required
+                  maxLength={40}
+                  value={option.name}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      options: form.options.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? { ...item, name: event.target.value }
+                          : item,
+                      ),
+                    })
+                  }
+                  placeholder="Nama pilihan"
+                  className="rounded-xl border border-zinc-700 bg-black px-3 py-3"
+                />
+                <input
+                  required
+                  value={option.values.join(', ')}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      options: form.options.map((item, itemIndex) =>
+                        itemIndex === index
+                          ? {
+                              ...item,
+                              values: event.target.value
+                                .split(',')
+                                .map((value) => value.trim()),
+                            }
+                          : item,
+                      ),
+                    })
+                  }
+                  placeholder="Nilai dipisahkan koma"
+                  className="rounded-xl border border-zinc-700 bg-black px-3 py-3"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setForm({
+                      ...form,
+                      options: form.options.filter(
+                        (_, itemIndex) => itemIndex !== index,
+                      ),
+                    })
+                  }
+                  className="rounded-xl bg-red-900 px-4 py-3 text-sm font-bold"
+                >
+                  Hapus
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
         <div className="mt-6 flex gap-3">
           <button
             disabled={pending}

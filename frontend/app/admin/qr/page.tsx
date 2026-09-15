@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useState } from 'react'
 import { QRCodeSVG } from 'qrcode.react'
 
 import { apiRequest } from '@/lib/client-api'
@@ -10,23 +10,21 @@ export default function TableQrPage() {
   const [tables, setTables] = useState<DiningTable[]>([])
   const [newCode, setNewCode] = useState('')
   const [message, setMessage] = useState('Memuat meja...')
-  const baseUrl = useMemo(
-    () =>
-      process.env.NEXT_PUBLIC_APP_URL ||
-      (typeof window !== 'undefined' ? window.location.origin : ''),
-    [],
-  )
+  const [baseUrl, setBaseUrl] = useState('')
 
   const load = () =>
-    apiRequest<DiningTable[]>('/api/tables').then((data) => {
+    apiRequest<DiningTable[]>('/api/tables?scope=admin').then((data) => {
       setTables(data)
       setMessage('')
     })
 
   useEffect(() => {
     let active = true
+    setBaseUrl(
+      process.env.NEXT_PUBLIC_APP_URL || window.location.origin,
+    )
     const timer = window.setTimeout(() => {
-      apiRequest<DiningTable[]>('/api/tables')
+      apiRequest<DiningTable[]>('/api/tables?scope=admin')
         .then((data) => {
           if (active) {
             setTables(data)

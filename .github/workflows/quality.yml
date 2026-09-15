@@ -24,6 +24,7 @@ jobs:
     env:
       SUPABASE_URL: https://ci-placeholder.supabase.co
       SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+      SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
       RATE_LIMIT_SECRET: ci-only-rate-limit-secret-not-used-in-production
       NEXT_PUBLIC_APP_URL: http://localhost:3000
     steps:
@@ -41,6 +42,8 @@ jobs:
         run: npm run lint
       - name: Typecheck
         run: npx tsc --noEmit
+      - name: Schema contract tests
+        run: npm test
       - name: Build
         run: npm run build
       - name: Production dependency audit

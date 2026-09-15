@@ -10,7 +10,8 @@ Next.js route handlers act as a backend-for-frontend:
 - protected handlers verify the authenticated user and required role;
 - Supabase RLS independently restricts table reads;
 - tables do not grant direct write privileges to browser roles;
-- sensitive writes use narrowly scoped RPC functions.
+- sensitive writes use narrowly scoped RPC functions;
+- anonymous order creation and status lookup require a server-only Supabase secret key, so the public publishable key cannot call them directly.
 
 ## Payment integrity
 
@@ -18,7 +19,8 @@ Next.js route handlers act as a backend-for-frontend:
 - A row lock and unique sale index prevent double payment.
 - An idempotency key makes safe retries possible.
 - QRIS is marked paid only after a cashier confirms the transfer.
-- Refund is owner-only and has its own idempotency key.
+- Payment/refund idempotency keys are bound to one order and operation.
+- Refund is owner-only, requires an open current shift, and has its own idempotency key.
 - Void/refund reasons are mandatory and recorded server-side.
 
 ## Inventory integrity
@@ -32,7 +34,8 @@ Clients cannot insert audit rows. Database functions create audit entries using 
 ## Operational controls
 
 - Rotate `RATE_LIMIT_SECRET` if exposed.
-- Never add service-role credentials to the app.
+- Keep `SUPABASE_SECRET_KEY` only in encrypted server-side Vercel settings. It has project-wide elevated access and must never reach browser code, logs, Git, chat, or URLs.
+- Rotate the Supabase secret key immediately if exposure is suspected.
 - Review pending staff accounts regularly.
 - Disable staff access immediately when a person leaves.
 - Keep Supabase and Vercel account MFA enabled.

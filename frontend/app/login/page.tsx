@@ -49,7 +49,11 @@ function LoginForm() {
       }
 
       const next = search.get('next')
-      router.replace(next && next.startsWith('/') ? next : '/access')
+      const safeNext =
+        next?.startsWith('/') && !next.startsWith('//')
+          ? next
+          : '/access'
+      router.replace(safeNext)
       router.refresh()
     } catch (error) {
       setMessage(

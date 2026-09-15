@@ -4,6 +4,7 @@
 
 - [ ] GitHub Actions lint passes
 - [ ] TypeScript check passes
+- [ ] Schema security contract tests pass
 - [ ] Next.js production build passes
 - [ ] Production dependency audit passes
 - [ ] Supabase security advisor has no unresolved error
@@ -23,16 +24,18 @@
 - [ ] Browser-supplied prices are ignored
 - [ ] Stock cannot drop below zero
 - [ ] Duplicate checkout token creates only one order
+- [ ] Direct anonymous calls cannot execute order-creation/status RPCs
+- [ ] Invalid product options are rejected
 - [ ] Invalid status transitions are rejected
 - [ ] Duplicate payment key creates only one payment
 - [ ] QRIS requires an explicit cashier confirmation
 - [ ] Void restores tracked stock
-- [ ] Refund is owner-only and optionally restocks
+- [ ] Refund is owner-only, requires an open shift, and optionally restocks
 - [ ] Shift cannot close with unfinished orders
 
 ## Deployment
 
-- [ ] Production environment variables are set
+- [ ] Production environment variables, including the server-only Supabase secret key, are set
 - [ ] Supabase Auth Site URL and redirect allowlist are correct
 - [ ] Table QR codes point to the final HTTPS domain
 - [ ] Health endpoint returns 200

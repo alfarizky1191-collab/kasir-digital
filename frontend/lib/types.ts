@@ -42,6 +42,16 @@ export type OrderItem = {
   subtotal: number
 }
 
+export type PosPayment = {
+  id: string
+  kind: 'sale' | 'refund'
+  method: 'cash' | 'qris'
+  amount: number
+  tendered: number | null
+  change_amount: number
+  created_at: string
+}
+
 export type PosOrder = {
   id: string
   order_number: number
@@ -56,6 +66,7 @@ export type PosOrder = {
   ready_at: string | null
   completed_at: string | null
   items?: OrderItem[]
+  payments?: PosPayment[]
 }
 
 export type Shift = {

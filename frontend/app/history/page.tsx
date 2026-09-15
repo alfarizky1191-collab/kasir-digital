@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   apiRequest,
@@ -27,6 +27,8 @@ export default function HistoryPage() {
   const [message, setMessage] = useState('Memuat riwayat...')
   const [page, setPage] = useState(1)
   const [hasMore, setHasMore] = useState(false)
+  const refundKeys = useRef<Record<string, string>>({})
+  const [refundingId, setRefundingId] = useState<string | null>(null)
 
   const load = (targetPage: number) =>
     apiRequest<HistoryResponse>(
@@ -73,20 +75,28 @@ export default function HistoryPage() {
       'Kembalikan item ke stok? Pilih OK jika barang kembali dan masih layak dijual.',
     )
 
+    const idempotencyKey =
+      refundKeys.current[order.id] || crypto.randomUUID()
+    refundKeys.current[order.id] = idempotencyKey
+    setRefundingId(order.id)
+
     try {
       await apiRequest(`/api/orders/${order.id}/refund`, {
         method: 'POST',
         body: JSON.stringify({
           reason,
           restock,
-          idempotencyKey: crypto.randomUUID(),
+          idempotencyKey,
         }),
       })
+      delete refundKeys.current[order.id]
       await load(page)
     } catch (error) {
       setMessage(
         error instanceof Error ? error.message : 'Refund gagal',
       )
+    } finally {
+      setRefundingId(null)
     }
   }
 
@@ -144,10 +154,13 @@ export default function HistoryPage() {
                     order.payment_status === 'paid' && (
                       <button
                         type="button"
+                        disabled={refundingId === order.id}
                         onClick={() => refund(order)}
-                        className="rounded-xl bg-red-700 px-3 py-2 text-sm font-bold"
+                        className="rounded-xl bg-red-700 px-3 py-2 text-sm font-bold disabled:opacity-50"
                       >
-                        Refund
+                        {refundingId === order.id
+                          ? 'Memproses...'
+                          : 'Refund'}
                       </button>
                     )}
                 </td>

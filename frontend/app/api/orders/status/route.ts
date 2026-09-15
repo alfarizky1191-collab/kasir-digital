@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 import {
   jsonError,
-  rpc,
+  privilegedRpc,
 } from '@/lib/supabase-rest'
 
 export async function GET(request: NextRequest) {
@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    const order = await rpc<Record<string, unknown> | null>(
+    const order = await privilegedRpc<Record<string, unknown> | null>(
       'pos_get_order_status',
       { p_order_id: id, p_public_token: token },
     )

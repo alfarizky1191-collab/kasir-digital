@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'
 import {
   jsonError,
   PosApiError,
-  rpc,
+  privilegedRpc,
 } from '@/lib/supabase-rest'
 
 type CreateResult = {
@@ -40,7 +40,7 @@ function requestFingerprint(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const allowed = await rpc<boolean>('pos_check_order_rate', {
+    const allowed = await privilegedRpc<boolean>('pos_check_order_rate', {
       p_key_hash: requestFingerprint(request),
       p_limit: 10,
       p_window_seconds: 60,
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const result = await rpc<CreateResult>(
+    const result = await privilegedRpc<CreateResult>(
       'pos_create_order',
       {
         p_customer_name: body.customerName || 'Tamu',

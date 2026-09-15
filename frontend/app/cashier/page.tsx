@@ -1,6 +1,7 @@
+/* eslint-disable @next/next/no-img-element */
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import {
   apiRequest,
@@ -13,9 +14,18 @@ type PaymentResult = {
   change_amount: number
 }
 
+type Settings = {
+  business_name: string
+  qris_image_url: string | null
+}
+
 export default function CashierPage() {
   const [orders, setOrders] = useState<PosOrder[]>([])
   const [selected, setSelected] = useState<PosOrder | null>(null)
+  const [qrisOrder, setQrisOrder] = useState<PosOrder | null>(null)
+  const [qrisConfirmed, setQrisConfirmed] = useState(false)
+  const [settings, setSettings] = useState<Settings | null>(null)
+  const paymentKeys = useRef<Record<string, string>>({})
   const [tendered, setTendered] = useState('')
   const [message, setMessage] = useState('Memuat antrean kasir...')
   const [pending, setPending] = useState(false)
@@ -29,13 +39,16 @@ export default function CashierPage() {
   useEffect(() => {
     let active = true
     const load = () => {
-      apiRequest<PosOrder[]>('/api/orders/cashier')
-        .then((data) => {
-          if (active) {
-            setOrders(data)
-            setMessage('')
-          }
-        })
+      Promise.all([
+        apiRequest<PosOrder[]>('/api/orders/cashier'),
+        apiRequest<Settings | null>('/api/settings'),
+      ]).then(([data, currentSettings]) => {
+        if (active) {
+          setOrders(data)
+          setSettings(currentSettings)
+          setMessage('')
+        }
+      })
         .catch((error: Error) => {
           if (active) setMessage(error.message)
         })
@@ -56,14 +69,13 @@ export default function CashierPage() {
     amount?: number,
   ) => {
     if (pending) return
-    if (
-      method === 'qris' &&
-      !window.confirm(
-        'Pastikan pembayaran QRIS sudah terlihat masuk. Konfirmasi lunas?',
-      )
-    ) {
-      return
-    }
+
+    const key = `${order.id}:${method}`
+    const idempotencyKey =
+      paymentKeys.current[key] || crypto.randomUUID()
+    paymentKeys.current[key] = idempotencyKey
+    const receiptWindow = window.open('about:blank', '_blank')
+    if (receiptWindow) receiptWindow.opener = null
 
     setPending(true)
     setMessage('')
@@ -76,19 +88,28 @@ export default function CashierPage() {
           body: JSON.stringify({
             method,
             tendered: amount,
-            idempotencyKey: crypto.randomUUID(),
+            idempotencyKey,
           }),
         },
       )
+      delete paymentKeys.current[key]
       setSelected(null)
+      setQrisOrder(null)
+      setQrisConfirmed(false)
       setTendered('')
-      await loadOrders()
-      window.open(
-        `/receipt/${encodeURIComponent(result.order_id)}`,
-        '_blank',
-        'noopener,noreferrer',
-      )
+
+      const receiptUrl = `/receipt/${encodeURIComponent(result.order_id)}`
+      if (receiptWindow) {
+        receiptWindow.location.replace(receiptUrl)
+      } else {
+        window.location.assign(receiptUrl)
+      }
+
+      loadOrders().catch((error: Error) => {
+        setMessage(error.message)
+      })
     } catch (error) {
+      receiptWindow?.close()
       setMessage(
         error instanceof Error ? error.message : 'Pembayaran gagal',
       )
@@ -180,8 +201,12 @@ export default function CashierPage() {
               </button>
               <button
                 type="button"
-                onClick={() => pay(order, 'qris')}
-                className="rounded-xl bg-blue-600 py-3 font-black"
+                disabled={pending}
+                onClick={() => {
+                  setQrisOrder(order)
+                  setQrisConfirmed(false)
+                }}
+                className="rounded-xl bg-blue-600 py-3 font-black disabled:opacity-50"
               >
                 QRIS
               </button>
@@ -243,6 +268,65 @@ export default function CashierPage() {
                 className="rounded-xl bg-green-600 py-3 font-black disabled:opacity-50"
               >
                 Konfirmasi
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {qrisOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/80 p-4 backdrop-blur">
+          <div className="w-full max-w-md rounded-3xl border border-zinc-700 bg-zinc-950 p-6">
+            <h2 className="text-3xl font-black">Pembayaran QRIS</h2>
+            <p className="mt-3 text-zinc-400">
+              {settings?.business_name || 'Kasir Digital'} · Total{' '}
+              {formatRupiah(qrisOrder.total)}
+            </p>
+            {settings?.qris_image_url ? (
+              <img
+                src={settings.qris_image_url}
+                alt="Kode QRIS pembayaran"
+                className="mx-auto mt-5 max-h-[50vh] rounded-2xl bg-white object-contain p-3"
+              />
+            ) : (
+              <p className="mt-5 rounded-2xl bg-amber-500/10 p-4 text-sm text-amber-200">
+                Gambar QRIS belum dikonfigurasi. Periksa pembayaran
+                melalui aplikasi merchant sebelum mengonfirmasi.
+              </p>
+            )}
+            <label className="mt-5 flex items-start gap-3 rounded-2xl border border-zinc-700 p-4">
+              <input
+                type="checkbox"
+                checked={qrisConfirmed}
+                onChange={(event) =>
+                  setQrisConfirmed(event.target.checked)
+                }
+                className="mt-1"
+              />
+              <span className="text-sm">
+                Saya sudah memastikan transaksi QRIS masuk dengan
+                nominal yang benar.
+              </span>
+            </label>
+            <div className="mt-6 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                disabled={pending}
+                onClick={() => {
+                  setQrisOrder(null)
+                  setQrisConfirmed(false)
+                }}
+                className="rounded-xl bg-zinc-800 py-3 font-bold disabled:opacity-50"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={pending || !qrisConfirmed}
+                onClick={() => pay(qrisOrder, 'qris')}
+                className="rounded-xl bg-blue-600 py-3 font-black disabled:opacity-50"
+              >
+                Konfirmasi lunas
               </button>
             </div>
           </div>

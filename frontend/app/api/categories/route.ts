@@ -1,4 +1,4 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 import {
   jsonError,
@@ -15,14 +15,20 @@ type Category = {
   active: boolean
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const token =
+      request.nextUrl.searchParams.get('scope') === 'admin'
+        ? (await requireRole(['owner'])).token
+        : null
     const params = new URLSearchParams({
       select: 'id,name,sort_order,active',
       order: 'sort_order.asc,name.asc',
     })
     const response = await supabaseFetch(
       `rest/v1/pos_categories?${params.toString()}`,
+      {},
+      token,
     )
 
     return NextResponse.json(

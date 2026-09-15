@@ -77,6 +77,7 @@ declare
   v_actor uuid := (select auth.uid());
   v_settings public.pos_settings;
   v_name text := btrim(coalesce(p_business_name, ''));
+  v_qris_url text := nullif(btrim(coalesce(p_qris_image_url, '')), '');
 begin
   if not public.pos_has_role(array['owner']) then
     raise exception 'Owner access required' using errcode = '42501';
@@ -84,10 +85,14 @@ begin
   if char_length(v_name) not between 2 and 100 then
     raise exception 'Nama usaha harus 2-100 karakter' using errcode = '22023';
   end if;
+  if v_qris_url is not null
+     and (char_length(v_qris_url) > 2048 or v_qris_url !~ '^https://') then
+    raise exception 'URL QRIS harus menggunakan HTTPS' using errcode = '22023';
+  end if;
 
   update public.pos_settings
   set business_name = v_name,
-      qris_image_url = nullif(btrim(coalesce(p_qris_image_url, '')), ''),
+      qris_image_url = v_qris_url,
       updated_at = now(),
       updated_by = v_actor
   where id = true

@@ -20,12 +20,18 @@ const ORDER_SELECT = [
   'items:pos_order_items(id,product_id,product_name,options,quantity,unit_price,subtotal)',
 ].join(',')
 
+const PAYMENT_SELECT =
+  'payments:pos_payments(id,kind,method,amount,tendered,change_amount,created_at)'
+
 export async function listOrders(
   token: string,
   filters: Record<string, string>,
+  includePayments = false,
 ) {
   const params = new URLSearchParams({
-    select: ORDER_SELECT,
+    select: includePayments
+      ? `${ORDER_SELECT},${PAYMENT_SELECT}`
+      : ORDER_SELECT,
     ...filters,
   })
   const response = await supabaseFetch(
@@ -44,7 +50,7 @@ export async function getOrder(
   const orders = await listOrders(token, {
     id: `eq.${id}`,
     limit: '1',
-  })
+  }, true)
 
   return orders[0] || null
 }

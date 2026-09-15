@@ -30,11 +30,22 @@ type CreateOrderResponse = {
   total: number
 }
 
+type Category = {
+  id: string
+  name: string
+}
+
+type Settings = {
+  business_name: string
+}
+
 function MenuContent() {
   const search = useSearchParams()
   const router = useRouter()
   const tableCode = search.get('table')
   const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<Category[]>([])
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [cart, setCart] = useState<CartLine[]>([])
   const [selections, setSelections] = useState<
     Record<string, Record<string, string>>
@@ -48,10 +59,17 @@ function MenuContent() {
   useEffect(() => {
     let active = true
     const timer = window.setTimeout(() => {
-      apiRequest<Product[]>('/api/products')
-        .then((data) => {
-          if (active) setProducts(data)
-        })
+      Promise.all([
+        apiRequest<Product[]>('/api/products'),
+        apiRequest<Category[]>('/api/categories'),
+        apiRequest<Settings | null>('/api/settings'),
+      ]).then(([productData, categoryData, currentSettings]) => {
+        if (active) {
+          setProducts(productData)
+          setCategories(categoryData)
+          setSettings(currentSettings)
+        }
+      })
         .catch((error: Error) => {
           if (active) setMessage(error.message)
         })
@@ -95,7 +113,10 @@ function MenuContent() {
       if (existing) {
         return current.map((line) =>
           line.key === key
-            ? { ...line, quantity: line.quantity + 1 }
+            ? {
+                ...line,
+                quantity: Math.min(99, line.quantity + 1),
+              }
             : line,
         )
       }
@@ -120,7 +141,10 @@ function MenuContent() {
           line.key === key
             ? {
                 ...line,
-                quantity: Math.max(0, line.quantity + delta),
+                quantity: Math.min(
+                  99,
+                  Math.max(0, line.quantity + delta),
+                ),
               }
             : line,
         )
@@ -176,7 +200,7 @@ function MenuContent() {
             {tableCode ? `Meja ${tableCode}` : 'Pesanan langsung'}
           </p>
           <h1 className="mt-2 text-4xl font-black sm:text-6xl">
-            Menu Aluna Eats
+            Menu {settings?.business_name || 'Kasir Digital'}
           </h1>
         </div>
       </header>
@@ -216,6 +240,14 @@ function MenuContent() {
                   <div className="p-5">
                     <div className="flex items-start justify-between gap-4">
                       <div>
+                        {product.category_id && (
+                          <p className="mb-1 text-xs font-bold uppercase tracking-wider text-zinc-500">
+                            {categories.find(
+                              (category) =>
+                                category.id === product.category_id,
+                            )?.name || 'Tanpa kategori'}
+                          </p>
+                        )}
                         <h2 className="text-2xl font-black">
                           {product.name}
                         </h2>

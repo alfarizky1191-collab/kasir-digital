@@ -6,6 +6,9 @@ create table public.pos_rate_limits (
   request_count integer not null default 1 check (request_count > 0)
 );
 
+create index pos_rate_limits_window_idx
+  on public.pos_rate_limits (window_started_at);
+
 alter table public.pos_rate_limits enable row level security;
 revoke all on public.pos_rate_limits from anon, authenticated;
 
@@ -57,4 +60,4 @@ $$;
 
 revoke all on function public.pos_check_order_rate(text, integer, integer) from public;
 grant execute on function public.pos_check_order_rate(text, integer, integer)
-  to anon, authenticated;
+  to service_role;

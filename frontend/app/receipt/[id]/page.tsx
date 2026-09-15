@@ -9,24 +9,32 @@ import {
 } from '@/lib/client-api'
 import type { PosOrder } from '@/lib/types'
 
+type Settings = {
+  business_name: string
+}
+
 export default function ReceiptPage() {
   const params = useParams<{ id: string }>()
   const [order, setOrder] = useState<PosOrder | null>(null)
+  const [settings, setSettings] = useState<Settings | null>(null)
   const [message, setMessage] = useState('Memuat struk...')
 
   useEffect(() => {
     let active = true
     const timer = window.setTimeout(() => {
-      apiRequest<PosOrder>(
-        `/api/orders/${encodeURIComponent(params.id)}`,
-      )
-        .then((data) => {
-          if (active) {
-            setOrder(data)
-            setMessage('')
-            window.setTimeout(() => window.print(), 400)
-          }
-        })
+      Promise.all([
+        apiRequest<PosOrder>(
+          `/api/orders/${encodeURIComponent(params.id)}`,
+        ),
+        apiRequest<Settings | null>('/api/settings'),
+      ]).then(([data, currentSettings]) => {
+        if (active) {
+          setOrder(data)
+          setSettings(currentSettings)
+          setMessage('')
+          window.setTimeout(() => window.print(), 400)
+        }
+      })
         .catch((error: Error) => {
           if (active) setMessage(error.message)
         })
@@ -42,11 +50,20 @@ export default function ReceiptPage() {
     return <div className="p-10 text-zinc-400">{message}</div>
   }
 
+  const sale = order.payments?.find(
+    (payment) => payment.kind === 'sale',
+  )
+  const refund = order.payments?.find(
+    (payment) => payment.kind === 'refund',
+  )
+
   return (
     <div className="min-h-screen bg-white p-6 text-black">
       <div className="mx-auto w-[320px] text-sm">
         <div className="border-b border-dashed border-black pb-4 text-center">
-          <h1 className="text-2xl font-black">ALUNA EATS</h1>
+          <h1 className="text-2xl font-black">
+            {settings?.business_name || 'Kasir Digital'}
+          </h1>
           <p>Kasir Digital</p>
         </div>
         <div className="space-y-1 py-4">
@@ -78,9 +95,38 @@ export default function ReceiptPage() {
             </div>
           ))}
         </div>
-        <div className="flex justify-between py-4 text-lg font-black">
-          <span>Total</span>
-          <span>{formatRupiah(order.total)}</span>
+        <div className="space-y-2 py-4">
+          <div className="flex justify-between text-lg font-black">
+            <span>Total</span>
+            <span>{formatRupiah(order.total)}</span>
+          </div>
+          {sale && (
+            <>
+              <div className="flex justify-between">
+                <span>Metode</span>
+                <span className="uppercase">{sale.method}</span>
+              </div>
+              {sale.method === 'cash' && (
+                <>
+                  <div className="flex justify-between">
+                    <span>Diterima</span>
+                    <span>
+                      {formatRupiah(sale.tendered || sale.amount)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Kembalian</span>
+                    <span>{formatRupiah(sale.change_amount)}</span>
+                  </div>
+                </>
+              )}
+            </>
+          )}
+          {refund && (
+            <div className="mt-3 border-t border-dashed border-black pt-3 text-center font-black">
+              REFUND {formatRupiah(refund.amount)}
+            </div>
+          )}
         </div>
         <p className="text-center text-xs">
           Terima kasih sudah berbelanja.
